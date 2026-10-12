@@ -1,0 +1,1117 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0B4F8A">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Laden">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="description" content="Öffentliche Ladesäulen in den Landkreisen Haßberge und Schweinfurt auf einer Karte und als Liste nach Entfernung.">
+<title>Laden – Haßberge und Schweinfurt</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230B4F8A'/><path d='M12 7v6M20 7v6M9 13h14v4a7 7 0 0 1-14 0zM16 24v3' stroke='white' stroke-width='2.6' fill='none' stroke-linecap='round'/></svg>">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Semi+Condensed:wght@600;700&display=swap" rel="stylesheet" crossorigin="anonymous">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" crossorigin="anonymous">
+
+<style>
+  /* Farben angelehnt an deutsche Verkehrsschilder: Verkehrsblau für normales
+     Laden (AC), Signalgelb für Schnellladen (DC). Grün und Rot bleiben frei
+     für die Live-Belegung in Phase 2. */
+  :root {
+    --blau: #0B4F8A;
+    --blau-akzent: #2E74B5;
+    --gelb: #F2B200;
+    --tinte: #14212E;
+    --tinte-leise: #4A5967;
+    --grund: #FFFFFF;
+    --flaeche: #EEF2F5;
+    --linie: #CBD5DE;
+    --schatten: 0 2px 12px rgba(20, 33, 46, .22);
+    --schrift: "Barlow", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --schrift-schild: "Barlow Semi Condensed", "Barlow", "Arial Narrow", system-ui, sans-serif;
+    --oben: env(safe-area-inset-top, 0px);
+    --unten: env(safe-area-inset-bottom, 0px);
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --blau-akzent: #79AEE0;
+      --tinte: #E6EDF3;
+      --tinte-leise: #9FB0BF;
+      --grund: #121A22;
+      --flaeche: #1B2631;
+      --linie: #2C3A47;
+      --schatten: 0 2px 14px rgba(0, 0, 0, .55);
+    }
+    /* Kartenkacheln im Dunkelmodus abdunkeln */
+    .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.88); }
+    .leaflet-container { background: #1d252d; }
+  }
+
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: var(--schrift);
+    color: var(--tinte);
+    background: var(--grund);
+    -webkit-font-smoothing: antialiased;
+  }
+  #karte { position: fixed; inset: 0; }
+  button { font: inherit; color: inherit; }
+  [hidden] { display: none !important; }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  :focus-visible { outline: 3px solid var(--blau-akzent); outline-offset: 2px; }
+
+  /* ---------- Kopf: ein blaues Hinweisschild ---------- */
+  .schild {
+    position: fixed;
+    z-index: 1000;
+    top: calc(12px + var(--oben));
+    left: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px 8px 10px;
+    background: var(--blau);
+    color: #fff;
+    border: 2px solid #fff;
+    border-radius: 8px;
+    box-shadow: var(--schatten);
+    max-width: calc(100vw - 130px);
+    box-sizing: border-box;
+  }
+  .schild svg { flex: none; width: 30px; height: 30px; }
+  .schild h1 {
+    margin: 0;
+    font: 700 1.375rem/1 var(--schrift-schild);
+    letter-spacing: .01em;
+  }
+  .schild p { margin: 2px 0 0; font-size: .8125rem; line-height: 1.2; opacity: .92; }
+  .schild .offline {
+    display: inline-block;
+    margin-top: 5px;
+    padding: 1px 7px;
+    border-radius: 4px;
+    background: #fff;
+    color: var(--blau);
+    font-size: .75rem;
+    font-weight: 600;
+  }
+  .schild .zaehler { opacity: .78; font-variant-numeric: tabular-nums; }
+
+  /* ---------- Marker: kleine Schilder mit der Höchstleistung in kW ---------- */
+  .marker { background: none; border: 0; }
+  .platte {
+    position: absolute;
+    left: 0; top: 0;
+    transform: translate(-50%, -50%);
+    box-sizing: border-box;
+    min-width: 32px;
+    height: 24px;
+    padding: 0 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--blau);
+    color: #fff;
+    border: 2px solid #fff;
+    border-radius: 5px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .4);
+    font: 700 .875rem/1 var(--schrift-schild);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .platte.dc { background: var(--gelb); color: #14212E; }
+  .platte.aktiv { outline: 3px solid var(--blau-akzent); outline-offset: 2px; }
+  .marker:focus-visible { outline: none; }
+  .marker:focus-visible .platte { outline: 3px solid var(--blau-akzent); outline-offset: 2px; }
+  /* Weit herausgezoomt: nur Punkte, damit sich nichts überdeckt */
+  .karte-fern .platte {
+    min-width: 0; width: 13px; height: 13px; padding: 0;
+    border-radius: 50%; font-size: 0;
+  }
+  .ich {
+    position: absolute; left: 0; top: 0; transform: translate(-50%, -50%);
+    width: 16px; height: 16px; border-radius: 50%;
+    background: var(--blau-akzent); border: 3px solid #fff;
+    box-shadow: 0 0 0 6px rgba(46, 116, 181, .25);
+  }
+
+  /* ---------- Untere Leiste: Filter und Standort ---------- */
+  .leiste {
+    position: fixed;
+    z-index: 1000;
+    left: 12px; right: 12px;
+    bottom: calc(12px + var(--unten));
+    display: flex;
+    gap: 10px;
+    align-items: stretch;
+    pointer-events: none;
+  }
+  .leiste > * { pointer-events: auto; }
+  .filter {
+    flex: 1;
+    display: flex;
+    padding: 4px;
+    gap: 4px;
+    background: var(--grund);
+    border-radius: 12px;
+    box-shadow: var(--schatten);
+  }
+  .filter button {
+    flex: 1;
+    min-height: 44px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    font-weight: 600;
+    font-size: .9375rem;
+    color: var(--tinte-leise);
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .filter button[aria-checked="true"] { background: var(--blau); color: #fff; }
+  .orten {
+    flex: none;
+    width: 52px;
+    border: 0;
+    border-radius: 12px;
+    background: var(--grund);
+    color: var(--blau-akzent);
+    box-shadow: var(--schatten);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+  }
+  .orten svg { width: 24px; height: 24px; }
+  .orten[aria-busy="true"] { opacity: .55; }
+
+  /* Leaflet-Bedienelemente über die Leiste schieben */
+  .leaflet-bottom { bottom: calc(68px + var(--unten)); }
+  .leaflet-top { top: calc(var(--oben) + 58px); }   /* Platz für den Knopf Karte/Liste */
+  .leaflet-control-attribution { font-size: 10px; }
+
+  /* ---------- Umschalter Karte / Liste ---------- */
+  .ansicht {
+    position: fixed;
+    z-index: 1000;
+    top: calc(12px + var(--oben));
+    right: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    padding: 0 14px 0 11px;
+    border: 0;
+    border-radius: 22px;
+    background: var(--grund);
+    color: var(--blau-akzent);
+    box-shadow: var(--schatten);
+    font-weight: 600;
+    font-size: .9375rem;
+    cursor: pointer;
+  }
+  .ansicht svg { width: 20px; height: 20px; flex: none; }
+
+  /* Suchhinweis auf der Karte, solange eine Suche aktiv ist */
+  .suchchip {
+    position: fixed;
+    z-index: 1000;
+    top: calc(var(--kopf-unten, 88px) + 10px);
+    left: 12px;
+    max-width: calc(100vw - 24px);
+    display: flex;
+    align-items: stretch;
+    border-radius: 18px;
+    background: var(--tinte);
+    box-shadow: var(--schatten);
+    font-size: .875rem;
+  }
+  .suchchip button { border: 0; background: none; color: var(--grund); cursor: pointer; min-height: 36px; }
+  .suchchip-text { padding: 0 4px 0 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .suchchip .x { flex: none; width: 40px; font-size: 1.25rem; line-height: 1; }
+  body.ansicht-liste .suchchip { display: none; }
+
+  /* ---------- Liste „In der Nähe“ ---------- */
+  .liste {
+    position: fixed;
+    z-index: 900;
+    inset: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--grund);
+    padding: calc(var(--kopf-unten, 88px) + 16px) 0 calc(96px + var(--unten));
+  }
+  .liste[hidden] { display: none; }
+  .liste-kopf { padding: 0 12px; }
+  .suche {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    min-height: 46px;
+    background: var(--flaeche);
+    border: 1px solid var(--linie);
+    border-radius: 12px;
+  }
+  .suche:focus-within { border-color: var(--blau-akzent); box-shadow: 0 0 0 2px var(--blau-akzent); }
+  .suche svg { width: 20px; height: 20px; flex: none; color: var(--tinte-leise); }
+  .suche input {
+    flex: 1; min-width: 0;
+    border: 0; outline: none; background: transparent;
+    font: inherit; font-size: 1rem;   /* 16px: verhindert das Auto-Zoomen auf dem iPhone */
+    color: var(--tinte);
+    padding: 10px 0;
+  }
+  .suche input::-webkit-search-cancel-button { cursor: pointer; }
+  .installieren {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding: 12px 12px 12px 14px;
+    border: 1px solid var(--linie);
+    border-radius: 12px;
+    background: var(--flaeche);
+  }
+  .installieren img { flex: none; border-radius: 10px; }
+  .installieren-text { flex: 1; min-width: 0; }
+  .installieren-text b { font-weight: 600; }
+  .installieren-text p { margin: 2px 0 0; font-size: .875rem; line-height: 1.4; color: var(--tinte-leise); }
+  .installieren-ja {
+    margin-top: 10px;
+    min-height: 40px;
+    padding: 0 16px;
+    border: 0;
+    border-radius: 10px;
+    background: var(--blau);
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .installieren .schliessen { margin: -6px -6px 0 0; }
+  .stecker { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .stecker:empty { display: none; }
+  .stecker button {
+    min-height: 36px;
+    padding: 0 14px;
+    border: 1px solid var(--linie);
+    border-radius: 18px;
+    background: var(--grund);
+    font-weight: 600;
+    font-size: .875rem;
+    color: var(--tinte-leise);
+    cursor: pointer;
+  }
+  .stecker button[aria-pressed="true"] { background: var(--blau); border-color: var(--blau); color: #fff; }
+  .bezug { margin: 12px 0 4px; font-size: .875rem; color: var(--tinte-leise); }
+  .textknopf {
+    border: 0; padding: 0; background: none;
+    color: var(--blau-akzent); font-weight: 600; text-decoration: underline;
+    text-underline-offset: 2px; cursor: pointer;
+  }
+  .eintraege { list-style: none; margin: 0; padding: 0; }
+  .eintrag {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 12px;
+    border: 0;
+    border-bottom: 1px solid var(--linie);
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+  }
+  .eintrag:hover { background: var(--flaeche); }
+  .eintrag.aktiv { background: var(--flaeche); box-shadow: inset 4px 0 0 var(--blau-akzent); }
+  .eintrag .platte { position: static; transform: none; flex: none; min-width: 44px; height: 30px; font-size: 1rem; }
+  .eintrag-text { flex: 1; min-width: 0; display: grid; gap: 1px; }
+  .eintrag-text b { font-weight: 600; font-size: 1rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .eintrag-text span { font-size: .875rem; color: var(--tinte-leise); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .eintrag-text .warnung { font-size: .8125rem; }
+  .eintrag-weg { flex: none; font-weight: 600; font-size: .9375rem; font-variant-numeric: tabular-nums; }
+  .leer { padding: 32px 24px; text-align: center; color: var(--tinte-leise); }
+  .leer p { margin: 0 0 12px; }
+  .knopf-leise {
+    min-height: 44px; padding: 0 18px;
+    border: 1px solid var(--linie); border-radius: 10px;
+    background: var(--grund); font-weight: 600; cursor: pointer;
+  }
+  @media (min-width: 700px) {
+    /* Am Rechner: Liste als Spalte links, die Karte bleibt rechts sichtbar */
+    .liste { right: auto; width: 400px; box-shadow: var(--schatten); }
+    body.ansicht-liste .blatt { left: 412px; }
+  }
+
+  /* ---------- Detailblatt ---------- */
+  .blatt {
+    position: fixed;
+    z-index: 1100;
+    left: 0; right: 0; bottom: 0;
+    max-height: 72vh;
+    max-height: 72dvh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--grund);
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, .25);
+    padding: 8px 18px calc(20px + var(--unten));
+    transform: translateY(105%);
+    transition: transform .22s ease-out;
+    visibility: hidden;
+  }
+  .blatt.offen { transform: none; visibility: visible; }
+  @media (min-width: 700px) {
+    .blatt { left: 12px; right: auto; bottom: 12px; width: 380px; border-radius: 14px; max-height: calc(100vh - 110px); }
+    .leiste { left: auto; width: 420px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .blatt { transition: none; } }
+
+  .griff { width: 40px; height: 4px; border-radius: 2px; background: var(--linie); margin: 0 auto 12px; }
+  .blatt-kopf { display: flex; gap: 12px; align-items: flex-start; }
+  .blatt-kopf .platte {
+    position: static; transform: none; flex: none;
+    min-width: 56px; height: 44px; font-size: 1.375rem; border-radius: 7px;
+    flex-direction: column; gap: 1px; cursor: default;
+  }
+  .blatt-kopf .platte small { font-size: .625rem; font-weight: 600; }
+  .blatt-kopf .titel { flex: 1; min-width: 0; }
+  .blatt h2 { margin: 0; font-size: 1.1875rem; font-weight: 600; line-height: 1.25; outline: none; }
+  .adresse, .entfernung { margin: 3px 0 0; color: var(--tinte-leise); font-size: .9375rem; }
+  .schliessen {
+    flex: none; width: 40px; height: 40px; margin: -4px -8px 0 0;
+    border: 0; background: transparent; border-radius: 50%;
+    font-size: 1.75rem; line-height: 1; color: var(--tinte-leise); cursor: pointer;
+  }
+  .aktionen { display: flex; gap: 8px; margin: 16px 0 6px; }
+  .zur-karte {
+    flex: none;
+    padding: 0 16px;
+    border: 1px solid var(--linie);
+    border-radius: 10px;
+    background: var(--grund);
+    color: var(--blau-akzent);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .route {
+    flex: 1;
+    display: block;
+    padding: 13px;
+    text-align: center;
+    background: var(--blau);
+    color: #fff;
+    border-radius: 10px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .saeule { padding: 14px 0; border-bottom: 1px solid var(--linie); }
+  .saeule:last-of-type { border-bottom: 0; }
+  .saeule-kopf { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; }
+  .warnung { color: #B3261E; font-weight: 600; font-size: .875rem; }
+  @media (prefers-color-scheme: dark) { .warnung { color: #FF8A80; } }
+  .punkte { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+  .punkte li { display: flex; align-items: center; gap: 8px; font-size: .9375rem; }
+  .art {
+    flex: none; width: 30px; padding: 2px 0; border-radius: 4px; text-align: center;
+    font: 700 .75rem/1.2 var(--schrift-schild); background: var(--blau); color: #fff;
+  }
+  .art.dc { background: var(--gelb); color: #14212E; }
+  .punkte b { margin-left: auto; font-variant-numeric: tabular-nums; }
+  .info { margin-top: 14px; }
+  .info h3 { margin: 0 0 3px; font-size: .875rem; font-weight: 600; color: var(--tinte-leise); }
+  .info p { margin: 0; font-size: .9375rem; line-height: 1.45; }
+  .quelle { margin: 18px 0 0; font-size: .75rem; color: var(--tinte-leise); line-height: 1.4; }
+
+  /* ---------- Meldungen ---------- */
+  .meldung {
+    position: fixed; z-index: 1200;
+    left: 50%; bottom: calc(84px + var(--unten));
+    transform: translateX(-50%);
+    max-width: calc(100vw - 32px);
+    padding: 10px 16px;
+    background: var(--tinte); color: var(--grund);
+    border-radius: 10px; font-size: .9375rem;
+    box-shadow: var(--schatten);
+  }
+  .meldung:empty { display: none; }
+  .hinweis {
+    position: fixed; z-index: 1050;
+    left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: min(340px, calc(100vw - 32px));
+    padding: 20px;
+    background: var(--grund);
+    border-radius: 14px;
+    box-shadow: var(--schatten);
+  }
+  .hinweis h2 { margin: 0 0 8px; font-size: 1.125rem; }
+  .hinweis p { margin: 0 0 8px; line-height: 1.45; }
+  .hinweis code { background: var(--flaeche); padding: 1px 5px; border-radius: 4px; font-size: .875em; }
+</style>
+</head>
+<body>
+
+<div id="karte" aria-label="Karte der Ladesäulen"></div>
+
+<header class="schild">
+  <svg viewBox="0 0 32 32" aria-hidden="true">
+    <path d="M12 6v6M20 6v6M9 12h14v4.5a7 7 0 0 1-14 0zM16 23.5v3.5" stroke="#fff" stroke-width="2.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <div>
+    <h1>Laden</h1>
+    <p>Haßberge und Schweinfurt</p>
+    <p class="zaehler" id="zaehler"></p>
+    <p class="offline" id="offline" hidden></p>
+  </div>
+</header>
+
+<button type="button" class="ansicht" id="ansicht" aria-controls="liste" aria-expanded="false">
+  <svg id="ansicht-icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></svg>
+  <span id="ansicht-text">Liste</span>
+</button>
+
+<div class="suchchip" id="suchchip" hidden>
+  <button type="button" class="suchchip-text" id="suchchip-text" title="In der Liste ändern"></button>
+  <button type="button" class="x" id="suchchip-weg" aria-label="Suche und Stecker-Auswahl aufheben">×</button>
+</div>
+
+<section class="liste" id="liste" aria-label="Ladesäulen in der Nähe" hidden>
+  <div class="liste-kopf">
+    <div class="installieren" id="installieren" hidden>
+      <img src="icon-192.png" alt="" width="44" height="44">
+      <div class="installieren-text">
+        <b>Als App aufs Handy</b>
+        <p id="installieren-text">Startet vom Startbildschirm und zeigt die Säulen auch ohne Netz.</p>
+        <button type="button" class="installieren-ja" id="installieren-ja" hidden>Installieren</button>
+      </div>
+      <button type="button" class="schliessen" id="installieren-weg" aria-label="Hinweis ausblenden">×</button>
+    </div>
+    <label class="suche">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+        <circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/>
+      </svg>
+      <input type="search" id="suche" placeholder="Ort, PLZ, Straße oder Betreiber"
+        autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" aria-label="Suchen">
+    </label>
+    <div class="stecker" id="stecker" role="group" aria-label="Nur mit diesem Stecker"></div>
+    <p class="bezug" id="bezug" aria-live="polite"></p>
+  </div>
+  <ol class="eintraege" id="eintraege"></ol>
+  <div class="leer" id="leer" hidden>
+    <p>Keine Ladesäule passt zu Suche und Filtern.</p>
+    <button type="button" class="knopf-leise" id="zuruecksetzen">Alles zurücksetzen</button>
+  </div>
+</section>
+
+<nav class="leiste" aria-label="Filter">
+  <div class="filter" role="radiogroup" aria-label="Ladeleistung">
+    <button type="button" role="radio" aria-checked="true" data-filter="alle">Alle</button>
+    <button type="button" role="radio" aria-checked="false" data-filter="dc">Schnell</button>
+    <button type="button" role="radio" aria-checked="false" data-filter="hpc">Ab 150 kW</button>
+  </div>
+  <button type="button" class="orten" id="orten" aria-label="Meinen Standort zeigen">
+    <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+      <circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="2" fill="currentColor"/>
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+    </svg>
+  </button>
+</nav>
+
+<section class="blatt" id="blatt" role="dialog" aria-modal="false" aria-labelledby="blatt-titel">
+  <div class="griff" aria-hidden="true"></div>
+  <div class="blatt-kopf">
+    <div class="platte" id="blatt-platte"></div>
+    <div class="titel">
+      <h2 id="blatt-titel" tabindex="-1"></h2>
+      <p class="adresse" id="blatt-adresse"></p>
+      <p class="entfernung" id="blatt-entfernung" hidden></p>
+    </div>
+    <button type="button" class="schliessen" id="schliessen" aria-label="Schließen">×</button>
+  </div>
+  <div class="aktionen">
+    <a class="route" id="route" href="#" target="_blank" rel="noopener">Route starten</a>
+    <button type="button" class="zur-karte" id="zur-karte" hidden>Auf der Karte</button>
+  </div>
+  <div id="blatt-inhalt"></div>
+  <p class="quelle" id="quelle"></p>
+</section>
+
+<div class="hinweis" id="hinweis" hidden>
+  <h2>Noch keine Ladesäulen-Daten</h2>
+  <p>Starte auf GitHub unter <b>Actions</b> den Ablauf „Daten aktualisieren“ und lade die Seite danach neu.</p>
+  <p>Zum Testen am eigenen Rechner: <code>python3 aktualisieren.py</code> ausführen.</p>
+</div>
+
+<div class="meldung" id="meldung" role="status" aria-live="polite"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" crossorigin="anonymous"></script>
+<script>
+// ===================== Einstellungen =====================
+const DATEN_URL = "daten/standorte.json";
+const START_MITTE = [50.03, 10.40];   // zwischen Haßfurt und Schweinfurt
+const START_ZOOM = 10;
+const PUNKTE_UNTER_ZOOM = 12;         // darunter werden die Schilder zu Punkten
+
+// ===================== Hilfsfunktionen =====================
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const kw = (n) => n == null ? "?" : n.toLocaleString("de-DE", { maximumFractionDigits: 1 });
+
+function entfernungKm(a, b) {
+  const r = Math.PI / 180, R = 6371;
+  const dLat = (b.lat - a.lat) * r, dLon = (b.lon - a.lon) * r;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+function entfernungKurz(km) {
+  if (km < 1) return `${Math.max(10, Math.round(km * 100) * 10)} m`;
+  return `${km.toLocaleString("de-DE", { maximumFractionDigits: km < 10 ? 1 : 0 })} km`;
+}
+function entfernungText(km) {
+  return `${entfernungKurz(km)} entfernt`;
+}
+// Für die Suche: "Haßfurt", "hassfurt" und "Hassfurt" sollen gleich sein, ebenso "Königsberg" und "Koenigsberg".
+function suchform(s) {
+  return String(s ?? "").toLowerCase()
+    .replace(/ß/g, "ss")
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/ae/g, "a").replace(/oe/g, "o").replace(/ue/g, "u");
+}
+// Gemerkte Einstellungen (Filter, Stecker). Klappt das Speichern nicht, geht es einfach ohne.
+const SPEICHER = "ladekarte.einstellungen";
+function ladeEinstellungen() {
+  try { return JSON.parse(localStorage.getItem(SPEICHER)) || {}; } catch { return {}; }
+}
+function speichereEinstellungen() {
+  try { localStorage.setItem(SPEICHER, JSON.stringify({ filter, stecker: [...stecker] })); } catch {}
+}
+function routeLink(st) {
+  const ziel = `${st.lat},${st.lon}`;
+  return /iPad|iPhone|iPod/.test(navigator.userAgent)
+    ? `https://maps.apple.com/?daddr=${ziel}`
+    : `https://www.google.com/maps/dir/?api=1&destination=${ziel}`;
+}
+function datumText(iso) {
+  const d = new Date(iso + "T12:00:00");
+  return isNaN(d) ? iso : d.toLocaleDateString("de-DE", { day: "numeric", month: "long", year: "numeric" });
+}
+let meldungTimer;
+function melde(text) {
+  $("meldung").textContent = text;
+  clearTimeout(meldungTimer);
+  meldungTimer = setTimeout(() => ($("meldung").textContent = ""), 5000);
+}
+
+// ===================== Karte =====================
+const karte = L.map("karte", { zoomControl: false }).setView(START_MITTE, START_ZOOM);
+L.control.zoom({ position: "topright" }).addTo(karte);
+karte.attributionControl.setPrefix('<a href="https://leafletjs.com">Leaflet</a>');
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19,
+  crossOrigin: true,   // damit der Service Worker angesehene Kacheln für unterwegs speichern kann
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+}).addTo(karte);
+
+const markerEbene = L.layerGroup().addTo(karte);
+let alle = [];          // [{ st, marker }]
+let filter = "alle";    // Ladeleistung: alle | dc | hpc
+let stecker = new Set();// gewählte Stecker-Gruppen, z. B. "CCS"
+let suche = "";         // Suchtext aus der Liste
+let ansicht = "karte";  // karte | liste
+let aktiv = null;       // gerade geöffneter Eintrag
+let ich = null;         // { lat, lon } nach Ortung
+let ichMarker = null;
+let datenStand = "";
+
+// Stecker-Knöpfe in der Liste. "Typ 2" umfasst Steckdose und fest angeschlagenes Kabel.
+const STECKER_GRUPPEN = [
+  { name: "CCS", passt: ["CCS"] },
+  { name: "Typ 2", passt: ["Typ 2", "Typ 2 Kabel"] },
+  { name: "CHAdeMO", passt: ["CHAdeMO"] },
+  { name: "Schuko", passt: ["Schuko"] },
+  { name: "Typ 1", passt: ["Typ 1"] },
+  { name: "Tesla", passt: ["Tesla"] },
+];
+
+function zoomStil() {
+  karte.getContainer().classList.toggle("karte-fern", karte.getZoom() < PUNKTE_UNTER_ZOOM);
+}
+karte.on("zoomend", zoomStil);
+zoomStil();
+
+// Einmal pro Standort vorbereiten: Suchtext, vorhandene Stecker, Kurzfassung für die Liste
+function bereite(st) {
+  const namen = new Set();
+  const zaehlung = new Map();   // Steckername -> { anzahl, dc }
+  for (const e of st.einrichtungen) {
+    for (const p of e.punkte) {
+      for (const n of p.stecker) {
+        namen.add(n);
+        const kurz = n === "Typ 2 Kabel" ? "Typ 2" : n;
+        const z = zaehlung.get(kurz) || { anzahl: 0, dc: p.dc };
+        z.anzahl++;
+        zaehlung.set(kurz, z);
+      }
+    }
+  }
+  st._stecker = namen;
+  st._steckerText = [...zaehlung.entries()]
+    .sort((a, b) => b[1].dc - a[1].dc || b[1].anzahl - a[1].anzahl)
+    .map(([n, z]) => `${z.anzahl} × ${n}`).join(" · ");
+  st._titel = st.einrichtungen[0]?.name || st.bezeichnung || st.betreiber[0] || "Ladestation";
+  st._ausser = st.einrichtungen.every((e) => e.status && !/in betrieb/i.test(e.status));
+  st._such = suchform([
+    st._titel, st.bezeichnung, st.strasse, st.plz, st.ort, st.kreis, ...st.betreiber,
+  ].join(" "));
+}
+
+function passt(st) {
+  if (filter === "dc" && !st.dc) return false;
+  if (filter === "hpc" && !(st.kwMax >= 150)) return false;
+  if (stecker.size) {
+    const ok = STECKER_GRUPPEN.some((g) => stecker.has(g.name) && g.passt.some((n) => st._stecker.has(n)));
+    if (!ok) return false;
+  }
+  if (suche) {
+    const woerter = suchform(suche).split(/\s+/).filter(Boolean);
+    if (!woerter.every((w) => st._such.includes(w))) return false;
+  }
+  return true;
+}
+
+function sichtbare() {
+  return alle.filter((e) => passt(e.st));
+}
+
+function zeichne() {
+  markerEbene.clearLayers();
+  let standorte = 0, punkte = 0;
+  for (const e of sichtbare()) {
+    e.marker.addTo(markerEbene);
+    standorte++;
+    punkte += e.st.ladepunkte;
+  }
+  $("zaehler").textContent = `${standorte} Standort${standorte === 1 ? "" : "e"}, ${punkte} Ladepunkt${punkte === 1 ? "" : "e"}`;
+  // Auf der Karte anzeigen, dass nicht alles zu sehen ist (Stecker und Suche stellt man in der Liste ein)
+  const teile = [];
+  if (stecker.size) teile.push(`Nur ${[...stecker].join(", ")}`);
+  if (suche) teile.push(`„${suche}“`);
+  $("suchchip").hidden = !teile.length;
+  $("suchchip-text").textContent = teile.join(" · ");
+  if (aktiv && !passt(aktiv.st)) schliesse();
+  if (ansicht === "liste") zeichneListe();
+}
+
+function markerFuer(eintrag) {
+  const st = eintrag.st;
+  const icon = L.divIcon({
+    className: "marker",
+    html: `<span class="platte${st.dc ? " dc" : ""}">${kw(st.kwMax)}</span>`,
+    iconSize: [0, 0],
+    iconAnchor: [0, 0],
+  });
+  const titel = `${st.ort}, ${st.strasse}: bis ${kw(st.kwMax)} kW${st.dc ? " (DC)" : ""}`;
+  const m = L.marker([st.lat, st.lon], {
+    icon, title: titel, alt: titel, keyboard: true,
+    zIndexOffset: Math.round(st.kwMax),   // starke Säulen liegen oben
+  });
+  m.on("click", (ev) => { L.DomEvent.stopPropagation(ev); oeffne(eintrag); });
+  return m;
+}
+
+// ===================== Liste „In der Nähe“ =====================
+const amRechner = window.matchMedia("(min-width: 700px)");
+
+// Von wo aus wird gemessen? Eigener Standort, sonst die Mitte des Kartenausschnitts.
+function bezugspunkt() {
+  if (ich) return { ...ich, text: "zu deinem Standort" };
+  const m = karte.getCenter();
+  return { lat: m.lat, lon: m.lng, text: "zur Kartenmitte" };
+}
+
+function zeichneListe() {
+  const von = bezugspunkt();
+  const treffer = sichtbare()
+    .map((e) => ({ e, km: entfernungKm(von, e.st) }))
+    .sort((a, b) => a.km - b.km);
+
+  $("bezug").innerHTML = treffer.length
+    ? `${treffer.length} Standort${treffer.length === 1 ? "" : "e"}, nach Entfernung ${von.text}` +
+      (ich ? "" : ` · <button type="button" class="textknopf" id="bezug-orten">Standort verwenden</button>`)
+    : "";
+  $("bezug-orten")?.addEventListener("click", orten);
+
+  $("leer").hidden = treffer.length > 0 || !alle.length;
+  $("eintraege").innerHTML = treffer.map(({ e, km }) => {
+    const st = e.st;
+    const adresse = [st.strasse, st.ort].filter(Boolean).join(", ");
+    return `<li><button type="button" class="eintrag${aktiv === e ? " aktiv" : ""}" data-id="${esc(st.id)}">
+      <span class="platte${st.dc ? " dc" : ""}" aria-hidden="true">${kw(st.kwMax)}</span>
+      <span class="eintrag-text">
+        <b>${esc(st._titel)}</b>
+        <span>${esc(adresse)}</span>
+        ${st._ausser ? `<span class="warnung">Derzeit außer Betrieb</span>`
+          : st._steckerText ? `<span>${esc(st._steckerText)}</span>` : ""}
+      </span>
+      <span class="eintrag-weg">${entfernungKurz(km)}</span>
+      <span class="sr-only">, bis ${kw(st.kwMax)} kW${st.dc ? ", Schnellladen" : ""}</span>
+    </button></li>`;
+  }).join("");
+}
+
+const nachId = new Map();
+$("eintraege").addEventListener("click", (ev) => {
+  const knopf = ev.target.closest(".eintrag");
+  if (!knopf) return;
+  const e = nachId.get(knopf.dataset.id);
+  if (!e) return;
+  oeffne(e);
+  // Am Rechner ist die Karte daneben sichtbar: dorthin schwenken
+  if (amRechner.matches) karte.flyTo([e.st.lat, e.st.lon], Math.max(karte.getZoom(), 14), { duration: 0.5 });
+});
+
+function baueSteckerKnoepfe() {
+  const vorhanden = new Set(alle.flatMap((e) => [...e.st._stecker]));
+  const gruppen = STECKER_GRUPPEN.filter((g) => g.passt.some((n) => vorhanden.has(n)));
+  for (const n of [...stecker]) if (!gruppen.some((g) => g.name === n)) stecker.delete(n);
+  $("stecker").innerHTML = gruppen.length < 2 ? "" : gruppen.map((g) =>
+    `<button type="button" aria-pressed="${stecker.has(g.name)}" data-stecker="${esc(g.name)}">${esc(g.name)}</button>`
+  ).join("");
+}
+$("stecker").addEventListener("click", (ev) => {
+  const knopf = ev.target.closest("button[data-stecker]");
+  if (!knopf) return;
+  const n = knopf.dataset.stecker;
+  stecker.has(n) ? stecker.delete(n) : stecker.add(n);
+  knopf.setAttribute("aria-pressed", String(stecker.has(n)));
+  speichereEinstellungen();
+  zeichne();
+});
+
+$("suche").addEventListener("input", () => {
+  suche = $("suche").value.trim();
+  zeichne();
+});
+$("suche").addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter") $("suche").blur();   // Tastatur auf dem Handy einklappen
+});
+
+function setzeFilter(wert) {
+  filter = wert;
+  document.querySelectorAll(".filter button").forEach((b) =>
+    b.setAttribute("aria-checked", String(b.dataset.filter === wert)));
+}
+
+function hebeSucheAuf() {
+  suche = "";
+  $("suche").value = "";
+  zeichne();
+}
+function hebeSteckerAuf() {
+  stecker.clear();
+  speichereEinstellungen();
+  baueSteckerKnoepfe();
+}
+$("suchchip-weg").addEventListener("click", () => { hebeSteckerAuf(); hebeSucheAuf(); });
+$("suchchip-text").addEventListener("click", () => $("ansicht").click());
+$("zuruecksetzen").addEventListener("click", () => {
+  setzeFilter("alle");
+  hebeSteckerAuf();
+  hebeSucheAuf();
+});
+
+// Die Höhe des Kopfschilds hängt von Schrift und Bildschirmbreite ab: Liste und Hinweis darunter ausrichten
+const kopf = document.querySelector(".schild");
+function kopfMessen() {
+  document.documentElement.style.setProperty("--kopf-unten", `${Math.ceil(kopf.getBoundingClientRect().bottom)}px`);
+}
+if ("ResizeObserver" in window) new ResizeObserver(kopfMessen).observe(kopf);
+window.addEventListener("resize", kopfMessen);
+kopfMessen();
+
+// ----- Umschalten Karte / Liste (mit Zurück-Taste des Handys) -----
+const ICON_LISTE = '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2" fill="currentColor"/><circle cx="4.5" cy="12" r="1.2" fill="currentColor"/><circle cx="4.5" cy="18" r="1.2" fill="currentColor"/>';
+const ICON_KARTE = '<path d="M9 4 3 6.5v13.5L9 17.5l6 2.5 6-2.5V4l-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/>';
+
+function zeigeAnsicht(neu) {
+  const vorher = ansicht;
+  ansicht = neu;
+  const liste = neu === "liste";
+  document.body.classList.toggle("ansicht-liste", liste);
+  $("liste").hidden = !liste;
+  $("ansicht").setAttribute("aria-expanded", String(liste));
+  $("ansicht-text").textContent = liste ? "Karte" : "Liste";
+  $("ansicht-icon").innerHTML = liste ? ICON_KARTE : ICON_LISTE;
+  $("zur-karte").hidden = !liste || amRechner.matches;
+  if (liste) {
+    zeichneListe();
+    if (vorher !== "liste") $("liste").scrollTop = 0;
+  } else if (vorher === "liste" && suche) {
+    // Mit aktiver Suche zurück zur Karte: auf die Treffer zoomen
+    const t = sichtbare();
+    if (t.length) karte.fitBounds(L.latLngBounds(t.map((e) => [e.st.lat, e.st.lon])), { padding: [60, 60], maxZoom: 15 });
+  }
+}
+
+function zurKarte() {
+  if (history.state?.liste) history.back();      // löst popstate aus
+  else { history.replaceState(null, "", location.pathname + location.search); zeigeAnsicht("karte"); }
+}
+$("ansicht").addEventListener("click", () => {
+  if (ansicht === "liste") return zurKarte();
+  history.pushState({ liste: true }, "", "#liste");
+  zeigeAnsicht("liste");
+});
+window.addEventListener("popstate", () => zeigeAnsicht(location.hash === "#liste" ? "liste" : "karte"));
+$("zur-karte").addEventListener("click", () => {
+  const e = aktiv;
+  zurKarte();
+  if (e) {
+    karte.flyTo([e.st.lat, e.st.lon], Math.max(karte.getZoom(), 15), { duration: 0.6 });
+    oeffne(e);
+  }
+});
+amRechner.addEventListener?.("change", () => zeigeAnsicht(ansicht));
+zeigeAnsicht(location.hash === "#liste" ? "liste" : "karte");
+
+// ===================== Detailblatt =====================
+function punkteListe(einrichtung) {
+  // Gleiche Ladepunkte zusammenfassen: "2 × CCS 150 kW"
+  const gruppen = new Map();
+  for (const p of einrichtung.punkte) {
+    const name = p.stecker.join(" / ") || "Stecker unbekannt";
+    const key = `${p.dc}|${name}|${p.kw}`;
+    const g = gruppen.get(key) || { ...p, name, anzahl: 0 };
+    g.anzahl++;
+    gruppen.set(key, g);
+  }
+  if (!gruppen.size) return `<p class="adresse">Keine Angaben zu den Steckern.</p>`;
+  return `<ul class="punkte">${[...gruppen.values()].map((g) => `
+    <li><span class="art${g.dc ? " dc" : ""}">${g.dc ? "DC" : "AC"}</span>
+      ${g.anzahl > 1 ? `${g.anzahl} × ` : ""}${esc(g.name)}<b>${kw(g.kw)} kW</b></li>`).join("")}
+  </ul>`;
+}
+
+function einmalig(werte) {
+  return [...new Set(werte.filter(Boolean))];
+}
+
+function oeffne(eintrag) {
+  const st = eintrag.st;
+  if (aktiv) aktiv.marker.getElement()?.querySelector(".platte")?.classList.remove("aktiv");
+  aktiv = eintrag;
+  eintrag.marker.getElement()?.querySelector(".platte")?.classList.add("aktiv");
+
+  document.querySelectorAll(".eintrag.aktiv").forEach((el) => el.classList.remove("aktiv"));
+  document.querySelector(`.eintrag[data-id="${CSS.escape(st.id)}"]`)?.classList.add("aktiv");
+
+  $("blatt-titel").textContent = st._titel;
+  $("blatt-adresse").textContent = [st.strasse, [st.plz, st.ort].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+
+  const platte = $("blatt-platte");
+  platte.className = "platte" + (st.dc ? " dc" : "");
+  platte.innerHTML = `${kw(st.kwMax)}<small>kW</small>`;
+
+  const ent = $("blatt-entfernung");
+  if (ich) { ent.textContent = entfernungText(entfernungKm(ich, st)); ent.hidden = false; }
+  else ent.hidden = true;
+
+  $("route").href = routeLink(st);
+
+  // Überschrift je Ladesäule: Betreiber (wenn mehrere), sonst Nummer bzw. Anzahl Ladepunkte
+  const mehrereBetreiber = st.betreiber.length > 1;
+  const mehrereSaeulen = st.einrichtungen.length > 1;
+  let html = st.einrichtungen.map((e, i) => `
+    <div class="saeule">
+      <div class="saeule-kopf">
+        <span>${esc(mehrereBetreiber ? e.betreiber
+          : mehrereSaeulen ? `Säule ${i + 1}`
+          : `${e.anzahl} Ladepunkt${e.anzahl === 1 ? "" : "e"}`)}</span>
+        ${e.status && !/in betrieb/i.test(e.status) ? `<span class="warnung">${esc(e.status)}</span>` : ""}
+      </div>
+      ${punkteListe(e)}
+    </div>`).join("");
+
+  // bezahlen ist eine Liste je Säule (ältere gespeicherte Daten: ein Text)
+  const bezahlen = einmalig(st.einrichtungen.flatMap((e) => [].concat(e.bezahlen || [])));
+  const oeffnung = einmalig(st.einrichtungen.map((e) => e.oeffnung));
+  const parken = einmalig(st.einrichtungen.map((e) => e.parken));
+  if (!mehrereBetreiber && st.betreiber[0]) html += info("Betreiber", [st.betreiber[0]]);
+  if (bezahlen.length) html += info("Bezahlen", [bezahlen.join(" · ")]);
+  if (oeffnung.length) html += info("Öffnungszeiten", oeffnung);
+  if (parken.length) html += info("Parken", parken);
+  $("blatt-inhalt").innerHTML = html;
+
+  $("blatt").classList.add("offen");
+  $("blatt").scrollTop = 0;
+  $("blatt-titel").focus({ preventScroll: true });
+}
+
+function info(titel, werte) {
+  return `<div class="info"><h3>${titel}</h3>${werte.map((w) => `<p>${esc(w)}</p>`).join("")}</div>`;
+}
+
+function schliesse() {
+  if (aktiv) aktiv.marker.getElement()?.querySelector(".platte")?.classList.remove("aktiv");
+  aktiv = null;
+  document.querySelectorAll(".eintrag.aktiv").forEach((el) => el.classList.remove("aktiv"));
+  $("blatt").classList.remove("offen");
+}
+$("schliessen").addEventListener("click", schliesse);
+karte.on("click", schliesse);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") schliesse(); });
+
+// ===================== Filter =====================
+document.querySelectorAll(".filter button").forEach((knopf) => {
+  knopf.addEventListener("click", () => {
+    setzeFilter(knopf.dataset.filter);
+    speichereEinstellungen();
+    zeichne();
+  });
+});
+
+// ===================== Eigener Standort =====================
+$("orten").addEventListener("click", orten);
+function orten() {
+  if (!("geolocation" in navigator)) return melde("Dieses Gerät kann den Standort nicht bestimmen.");
+  $("orten").setAttribute("aria-busy", "true");
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      $("orten").removeAttribute("aria-busy");
+      ich = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+      if (ichMarker) ichMarker.remove();
+      ichMarker = L.marker([ich.lat, ich.lon], {
+        icon: L.divIcon({ className: "marker", html: '<span class="ich"></span>', iconSize: [0, 0] }),
+        title: "Dein Standort", keyboard: false, zIndexOffset: 2000,
+      }).addTo(karte);
+      karte.flyTo([ich.lat, ich.lon], Math.max(karte.getZoom(), 13), { duration: 0.6 });
+      if (aktiv) oeffne(aktiv);
+      if (ansicht === "liste") zeichneListe();
+    },
+    (fehler) => {
+      $("orten").removeAttribute("aria-busy");
+      melde(fehler.code === 1
+        ? "Standortzugriff ist blockiert. Erlaube ihn in den Browser-Einstellungen."
+        : "Standort nicht gefunden. Versuch es draußen noch einmal.");
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+  );
+}
+
+// ===================== Daten laden =====================
+async function lade() {
+  try {
+    const antwort = await fetch(DATEN_URL, { cache: "no-cache" });
+    if (!antwort.ok) throw new Error(antwort.status);
+    const daten = await antwort.json();
+    datenStand = daten.stand;
+    alle = daten.standorte.map((st) => {
+      bereite(st);
+      const e = { st };
+      e.marker = markerFuer(e);
+      nachId.set(st.id, e);
+      return e;
+    });
+    // Gemerkte Filter wiederherstellen
+    const gemerkt = ladeEinstellungen();
+    if (["alle", "dc", "hpc"].includes(gemerkt.filter)) setzeFilter(gemerkt.filter);
+    stecker = new Set(Array.isArray(gemerkt.stecker) ? gemerkt.stecker : []);
+    baueSteckerKnoepfe();
+    $("quelle").textContent =
+      `Datenstand ${datumText(daten.stand)}. Quelle: ${daten.quelle}. Angaben ohne Gewähr.`;
+    karte.attributionControl.addAttribution(`Ladesäulen: Bundesnetzagentur.de (CC BY 4.0)`);
+    // Nur wenn die Karte schon eine Größe hat. In einem versteckten Tab ist sie 0×0,
+    // dann würde Leaflet auf die höchste Zoomstufe springen.
+    if (alle.length && karte.getSize().x > 0) {
+      // Oben Platz für das Schild, unten für die Filterleiste, seitlich nur wenig,
+      // sonst passt die Region auf dem Handy nur eine Zoomstufe kleiner.
+      karte.fitBounds(L.latLngBounds(alle.map((e) => [e.st.lat, e.st.lon])), {
+        paddingTopLeft: [20, 90], paddingBottomRight: [20, 80], animate: false,
+      });
+    }
+    zeichne();
+    zeigeVerbindung();
+  } catch (e) {
+    console.error(e);
+    if (navigator.onLine === false) {
+      $("hinweis").innerHTML = `<h2>Keine Verbindung</h2>
+        <p>Die Ladesäulen sind auf diesem Gerät noch nicht gespeichert. Öffne die App einmal mit Internet, danach geht sie auch offline.</p>`;
+    }
+    $("hinweis").hidden = false;
+    $("zaehler").textContent = "";
+  }
+}
+lade();
+
+// ===================== Offline-Anzeige =====================
+function zeigeVerbindung() {
+  const offline = navigator.onLine === false;
+  $("offline").hidden = !offline;
+  const kurz = new Date(datenStand + "T12:00:00").toLocaleDateString("de-DE");
+  $("offline").textContent = datenStand && kurz !== "Invalid Date" ? `Offline · Stand ${kurz}` : "Offline";
+}
+window.addEventListener("online", zeigeVerbindung);
+window.addEventListener("offline", zeigeVerbindung);
+
+// ===================== Als App installieren =====================
+const HINWEIS_WEG = "ladekarte.installHinweisWeg";
+const istApp = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const istIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+  (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+let installEreignis = null;
+
+function hinweisWeggeklickt() {
+  try { return localStorage.getItem(HINWEIS_WEG) === "1"; } catch { return false; }
+}
+function zeigeInstallHinweis() {
+  if (istApp || hinweisWeggeklickt()) return;
+  if (installEreignis) {
+    $("installieren-ja").hidden = false;
+  } else if (istIOS) {
+    $("installieren-text").textContent =
+      "Tippe in Safari auf „Teilen“ und dann auf „Zum Home-Bildschirm“. Dann startet die Karte wie eine App, auch ohne Netz.";
+  } else {
+    return;   // Browser bietet keine Installation an
+  }
+  $("installieren").hidden = false;
+}
+function versteckeInstallHinweis(merken) {
+  $("installieren").hidden = true;
+  if (merken) try { localStorage.setItem(HINWEIS_WEG, "1"); } catch {}
+}
+window.addEventListener("beforeinstallprompt", (ev) => {
+  ev.preventDefault();          // eigener Knopf in der Liste statt Browser-Leiste
+  installEreignis = ev;
+  zeigeInstallHinweis();
+});
+window.addEventListener("appinstalled", () => versteckeInstallHinweis(true));
+$("installieren-ja").addEventListener("click", async () => {
+  if (!installEreignis) return;
+  installEreignis.prompt();
+  const { outcome } = await installEreignis.userChoice;
+  installEreignis = null;
+  versteckeInstallHinweis(outcome === "accepted");
+});
+$("installieren-weg").addEventListener("click", () => versteckeInstallHinweis(true));
+zeigeInstallHinweis();
+
+// ===================== Service Worker (offline) =====================
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch((e) => console.warn("Service Worker:", e));
+  });
+}
+</script>
+</body>
+</html>

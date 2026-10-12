@@ -1,0 +1,22 @@
+{
+  "name": "Laden – Haßberge und Schweinfurt",
+  "short_name": "Laden",
+  "description": "Öffentliche Ladesäulen in den Landkreisen Haßberge und Schweinfurt, mit Liste nach Entfernung.",
+  "lang": "de",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0B4F8A",
+  "theme_color": "#0B4F8A",
+  "categories": ["navigation", "travel", "utilities"],
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "In der Nähe", "short_name": "Liste", "url": "./#liste", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] }
+  ]
+}
