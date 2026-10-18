@@ -430,6 +430,7 @@
   .punkte b { margin-left: auto; font-variant-numeric: tabular-nums; }
   .info { margin-top: 14px; }
   .info h3 { margin: 0 0 3px; font-size: .875rem; font-weight: 600; color: var(--tinte-leise); }
+  .preis-hinweis { color: var(--tinte-leise); font-size: .8125rem !important; margin-top: 2px !important; }
   .info p { margin: 0; font-size: .9375rem; line-height: 1.45; }
   .quelle { margin: 18px 0 0; font-size: .75rem; color: var(--tinte-leise); line-height: 1.4; }
 
@@ -558,6 +559,8 @@
 <script>
 // ===================== Einstellungen =====================
 const DATEN_URL = "daten/standorte.json";
+const PREISE_URL = "daten/preise.json";
+let preise = { betreiber: {}, standorte: {}, stand: "" };
 const START_MITTE = [50.03, 10.40];   // zwischen Haßfurt und Schweinfurt
 const START_ZOOM = 10;
 const PUNKTE_UNTER_ZOOM = 12;         // darunter werden die Schilder zu Punkten
@@ -948,6 +951,7 @@ function oeffne(eintrag) {
   const oeffnung = einmalig(st.einrichtungen.map((e) => e.oeffnung));
   const parken = einmalig(st.einrichtungen.map((e) => e.parken));
   if (!mehrereBetreiber && st.betreiber[0]) html += info("Betreiber", [st.betreiber[0]]);
+  html += preisBlock(st);
   if (bezahlen.length) html += info("Bezahlen", [bezahlen.join(" · ")]);
   if (oeffnung.length) html += info("Öffnungszeiten", oeffnung);
   if (parken.length) html += info("Parken", parken);
@@ -956,6 +960,18 @@ function oeffne(eintrag) {
   $("blatt").classList.add("offen");
   $("blatt").scrollTop = 0;
   $("blatt-titel").focus({ preventScroll: true });
+}
+
+function preisBlock(st) {
+  const p = preise.standorte[st.id];
+  if (!p) return "";
+  const text = p.status === "nicht gefunden" ? "Preis nicht bekannt" : p.preis;
+  let h = `<div class="info"><h3>Preis (ct/kWh, brutto)</h3><p><strong>${esc(text)}</strong></p>`;
+  if (p.status === "teilweise / unsicher") h += `<p class="preis-hinweis">Unsicher oder nicht bestätigt</p>`;
+  if (p.status === "nicht gefunden") h += `<p class="preis-hinweis">Bitte an der Säule oder in der Lade-App prüfen.</p>`;
+  else if (p.hinweis) h += `<p class="preis-hinweis">${esc(p.hinweis)}</p>`;
+  if (p.link && p.status !== "nicht gefunden") h += `<p class="preis-hinweis"><a href="${esc(p.link)}" target="_blank" rel="noopener">Preisquelle</a></p>`;
+  return h + `<p class="preis-hinweis">Stand ${esc(preise.stand || "")}, ohne Gewähr. Verbindlich ist der Preis an der Säule.</p></div>`;
 }
 
 function info(titel, werte) {
@@ -1015,6 +1031,11 @@ async function lade() {
     const antwort = await fetch(DATEN_URL, { cache: "no-cache" });
     if (!antwort.ok) throw new Error(antwort.status);
     const daten = await antwort.json();
+    // Preise sind optional: ohne die Datei bleibt die App wie vorher
+    try {
+      const pa = await fetch(PREISE_URL, { cache: "no-cache" });
+      if (pa.ok) preise = await pa.json();
+    } catch (e) { console.warn("Preise nicht geladen", e); }
     datenStand = daten.stand;
     alle = daten.standorte.map((st) => {
       bereite(st);
