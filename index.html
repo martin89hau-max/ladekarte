@@ -322,6 +322,12 @@
     cursor: pointer;
   }
   .stecker button[aria-pressed="true"] { background: var(--blau); border-color: var(--blau); color: #fff; }
+  .meine { margin-top: 12px; }
+  .meine summary { cursor: pointer; font-weight: 600; font-size: .875rem; color: var(--blau-akzent); min-height: 36px; display: flex; align-items: center; }
+  .meine h3 { margin: 10px 0 0; font-size: .8125rem; font-weight: 600; color: var(--tinte-leise); }
+  .meine .stecker { margin-top: 6px; }
+  .meine .scroll { max-height: 190px; overflow-y: auto; }
+  .meine .leise { margin: 6px 0 0; font-size: .8125rem; color: var(--tinte-leise); }
   .bezug { margin: 12px 0 4px; font-size: .875rem; color: var(--tinte-leise); }
   .textknopf {
     border: 0; padding: 0; background: none;
@@ -514,6 +520,14 @@
         autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" aria-label="Suchen">
     </label>
     <div class="stecker preisfilter"><button type="button" id="nur-preis" aria-pressed="false">Nur mit Preis</button></div>
+    <details class="meine" id="meine">
+      <summary>Meine Karten und Betreiber</summary>
+      <h3>Diese Karten und Abos habe ich</h3>
+      <div class="stecker" id="karten" role="group" aria-label="Meine Karten und Abos"></div>
+      <h3>Diese Betreiber ausblenden</h3>
+      <div class="stecker scroll" id="betreiber-aus" role="group" aria-label="Betreiber ausblenden"></div>
+      <p class="leise">Gespeichert nur auf diesem Gerät. Ohne Auswahl gilt der Ad-hoc-Preis.</p>
+    </details>
     <div class="stecker" id="stecker" role="group" aria-label="Nur mit diesem Stecker"></div>
     <p class="bezug" id="bezug" aria-live="polite"></p>
   </div>
@@ -570,6 +584,7 @@
 // ===================== Einstellungen =====================
 const DATEN_URL = "daten/standorte.json";
 const PREISE_URL = "daten/preise.json";
+const TARIFE_URL = "daten/tarife.json";
 let preise = { betreiber: {}, standorte: {}, stand: "" };
 const START_MITTE = [50.03, 10.40];   // zwischen Haßfurt und Schweinfurt
 const START_ZOOM = 10;
@@ -607,7 +622,7 @@ function ladeEinstellungen() {
   try { return JSON.parse(localStorage.getItem(SPEICHER)) || {}; } catch { return {}; }
 }
 function speichereEinstellungen() {
-  try { localStorage.setItem(SPEICHER, JSON.stringify({ filter, nurPreis, stecker: [...stecker] })); } catch {}
+  try { localStorage.setItem(SPEICHER, JSON.stringify({ filter, nurPreis, stecker: [...stecker], karten: [...karten], ausgeblendet: [...ausgeblendet] })); } catch {}
 }
 function routeLink(st) {
   const ziel = `${st.lat},${st.lon}`;
@@ -639,6 +654,9 @@ L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
 const markerEbene = L.layerGroup().addTo(karte);
 let alle = [];          // [{ st, marker }]
 let filter = "alle";    // Ladeleistung: alle | dc | hpc
+let tarifeNachBetreiber = {};   // Betreiber -> Tarife mit Preis je AC/DC
+let karten = new Set();         // meine Karten und Abos
+let ausgeblendet = new Set();   // Betreiber, die ich nicht will
 let nurPreis = false;   // nur Standorte mit bekanntem Preis
 let stecker = new Set();// gewählte Stecker-Gruppen, z. B. "CCS"
 let suche = "";         // Suchtext aus der Liste
@@ -693,6 +711,7 @@ function bereite(st) {
 function passt(st) {
   if (filter === "dc" && !st.dc) return false;
   if (filter === "hpc" && !(st.kwMax >= 150)) return false;
+  if (ausgeblendet.size && st.betreiber.length && st.betreiber.every((b) => ausgeblendet.has(b))) return false;
   if (nurPreis && !kurzPreis(st)) return false;
   if (stecker.size) {
     const ok = STECKER_GRUPPEN.some((g) => stecker.has(g.name) && g.passt.some((n) => st._stecker.has(n)));
@@ -721,6 +740,7 @@ function zeichne() {
   // Auf der Karte anzeigen, dass nicht alles zu sehen ist (Stecker und Suche stellt man in der Liste ein)
   const teile = [];
   if (nurPreis) teile.push("Mit Preis");
+  if (ausgeblendet.size) teile.push(`${ausgeblendet.size} Betreiber aus`);
   if (stecker.size) teile.push(`Nur ${[...stecker].join(", ")}`);
   if (suche) teile.push(`„${suche}“`);
   $("suchchip").hidden = !teile.length;
@@ -730,7 +750,23 @@ function zeichne() {
 }
 
 // Kurzpreis für Schild und Liste: niedrigster ct-Wert aus dem Preistext, "~" wenn unsicher
+// Günstigster Preis, den ich mit meinen Karten (oder Ad-hoc) hier zahle
+function eigenerPreis(st) {
+  let best = null;
+  for (const b of st.betreiber) {
+    for (const t of tarifeNachBetreiber[b] || []) {
+      if (t.typ !== "adhoc" && !karten.has(t.name)) continue;
+      const v = st.dc ? t.dc : t.ac;
+      if (v == null) continue;
+      if (!best || v < best.v) best = { v, name: t.name, typ: t.typ, unsicher: t.sicherheit !== "gefunden" };
+    }
+  }
+  return best;
+}
+
 function kurzPreis(st) {
+  const eigen = eigenerPreis(st);
+  if (eigen) return { text: `${eigen.unsicher ? "~" : ""}${String(eigen.v).replace(".", ",")} ct`, unsicher: eigen.unsicher, name: eigen.name };
   const p = preise.standorte[st.id];
   if (!p || p.status === "nicht gefunden" || !p.preis) return null;
   const zahlen = [...p.preis.matchAll(/(\d+(?:,\d+)?)\s*(?:–\s*\d+\s*)?ct/g)].map((m) => parseFloat(m[1].replace(",", ".")));
@@ -739,16 +775,29 @@ function kurzPreis(st) {
   return { text: `${unsicher ? "~" : "ab "}${String(Math.min(...zahlen)).replace(".", ",")} ct`, unsicher };
 }
 
-function markerFuer(eintrag) {
-  const st = eintrag.st;
+function iconFuer(st) {
   const kp = kurzPreis(st);
-  const icon = L.divIcon({
+  return L.divIcon({
     className: "marker",
     html: `<span class="platte${st.dc ? " dc" : ""}">${kw(st.kwMax)}</span>` +
       (kp ? `<span class="preis-schild${kp.unsicher ? " unsicher" : ""}">${kp.text}</span>` : ""),
     iconSize: [0, 0],
     iconAnchor: [0, 0],
   });
+}
+
+// Nach Änderung der Karten: Preisschilder auf der Karte neu setzen
+function aktualisiereMarker() {
+  for (const e of alle) {
+    e.marker.setIcon(iconFuer(e.st));
+    if (e === aktiv) e.marker.getElement()?.querySelector(".platte")?.classList.add("aktiv");
+  }
+}
+
+function markerFuer(eintrag) {
+  const st = eintrag.st;
+  const kp = kurzPreis(st);
+  const icon = iconFuer(st);
   const titel = `${st.ort}, ${st.strasse}: bis ${kw(st.kwMax)} kW${st.dc ? " (DC)" : ""}${kp ? `, ${kp.text}/kWh` : ""}`;
   const m = L.marker([st.lat, st.lon], {
     icon, title: titel, alt: titel, keyboard: true,
@@ -847,6 +896,40 @@ function hebeSucheAuf() {
   $("suche").value = "";
   zeichne();
 }
+function kurzName(n) {
+  return n.replace(/[\s-]+(GmbH|AG|SE|KG|eG|oHG|mbH)\b.*$/i, "").replace(/ (mobility\+|Germany|Deutschland|Dienstleistung|Immobilienverwaltungs|Marken-Discount).*$/, "").replace(/\s{2,}/g, " ");
+}
+function baueMeineKnoepfe() {
+  const wege = [...new Set(Object.values(tarifeNachBetreiber).flat().filter((t) => t.typ !== "adhoc").map((t) => t.name))].sort();
+  $("karten").innerHTML = wege.map((n) =>
+    `<button type="button" aria-pressed="${karten.has(n)}" data-karte="${esc(n)}">${esc(n)}</button>`).join("");
+  const zahl = new Map();
+  for (const e of alle) for (const b of e.st.betreiber) zahl.set(b, (zahl.get(b) || 0) + 1);
+  const ops = [...zahl].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  $("betreiber-aus").innerHTML = ops.map(([n, c]) =>
+    `<button type="button" aria-pressed="${ausgeblendet.has(n)}" data-betreiber="${esc(n)}">${esc(kurzName(n))} (${c})</button>`).join("");
+}
+$("karten").addEventListener("click", (ev) => {
+  const k = ev.target.closest("button[data-karte]");
+  if (!k) return;
+  const n = k.dataset.karte;
+  karten.has(n) ? karten.delete(n) : karten.add(n);
+  k.setAttribute("aria-pressed", String(karten.has(n)));
+  speichereEinstellungen();
+  aktualisiereMarker();
+  zeichne();
+  if (aktiv) oeffne(aktiv);
+});
+$("betreiber-aus").addEventListener("click", (ev) => {
+  const k = ev.target.closest("button[data-betreiber]");
+  if (!k) return;
+  const n = k.dataset.betreiber;
+  ausgeblendet.has(n) ? ausgeblendet.delete(n) : ausgeblendet.add(n);
+  k.setAttribute("aria-pressed", String(ausgeblendet.has(n)));
+  speichereEinstellungen();
+  zeichne();
+});
+
 function setzeNurPreis(an) {
   nurPreis = an;
   $("nur-preis").setAttribute("aria-pressed", String(an));
@@ -858,6 +941,8 @@ $("nur-preis").addEventListener("click", () => {
 });
 function hebeSteckerAuf() {
   setzeNurPreis(false);
+  ausgeblendet.clear();
+  baueMeineKnoepfe();
   stecker.clear();
   speichereEinstellungen();
   baueSteckerKnoepfe();
@@ -1002,7 +1087,16 @@ function preisBlock(st) {
   const p = preise.standorte[st.id];
   if (!p) return "";
   const text = p.status === "nicht gefunden" ? "Preis nicht bekannt" : p.preis;
-  let h = `<div class="info"><h3>Preis (brutto), recherchiert ${esc(preise.stand || "")}</h3><p><strong>${esc(text)}</strong></p>`;
+  let h = `<div class="info"><h3>Preis (brutto), recherchiert ${esc(preise.stand || "")}</h3>`;
+  const eigen = eigenerPreis(st);
+  const alleTarife = st.betreiber.flatMap((b) => tarifeNachBetreiber[b] || [])
+    .map((t) => ({ ...t, v: st.dc ? t.dc : t.ac })).filter((t) => t.v != null).sort((a, b) => a.v - b.v);
+  if (eigen) {
+    h += `<p><strong>Für mich: ${String(eigen.v).replace(".", ",")} ct/kWh</strong> (${esc(eigen.name)})</p>`;
+    h += alleTarife.map((t) => `<p class="preis-hinweis">${esc(t.name)}: ${String(t.v).replace(".", ",")} ct${t.grund ? `, ${String(t.grund).replace(".", ",")} €/Monat` : ""}${t.typ === "adhoc" || karten.has(t.name) ? "" : " (habe ich nicht)"}</p>`).join("");
+    h += `<p class="preis-hinweis">Angaben des Betreibers:</p>`;
+  }
+  h += `<p><strong>${esc(text)}</strong></p>`;
   if (p.status === "teilweise / unsicher") h += `<p class="preis-hinweis">Unsicher oder nicht bestätigt</p>`;
   if (p.status === "nicht gefunden") h += `<p class="preis-hinweis">Bitte an der Säule oder in der Lade-App prüfen.</p>`;
   else if (p.hinweis) h += `<p class="preis-hinweis">${esc(p.hinweis)}</p>`;
@@ -1072,6 +1166,14 @@ async function lade() {
       const pa = await fetch(PREISE_URL, { cache: "no-cache" });
       if (pa.ok) preise = await pa.json();
     } catch (e) { console.warn("Preise nicht geladen", e); }
+    try {
+      const ta = await fetch(TARIFE_URL, { cache: "no-cache" });
+      if (ta.ok) {
+        const t = await ta.json();
+        tarifeNachBetreiber = {};
+        for (const x of t.tarife) (tarifeNachBetreiber[x.betreiber] ||= []).push(x);
+      }
+    } catch (e) { console.warn("Tarife nicht geladen", e); }
     datenStand = daten.stand;
     alle = daten.standorte.map((st) => {
       bereite(st);
@@ -1084,6 +1186,10 @@ async function lade() {
     const gemerkt = ladeEinstellungen();
     if (["alle", "dc", "hpc"].includes(gemerkt.filter)) setzeFilter(gemerkt.filter);
     setzeNurPreis(gemerkt.nurPreis === true);
+    karten = new Set(Array.isArray(gemerkt.karten) ? gemerkt.karten : []);
+    ausgeblendet = new Set(Array.isArray(gemerkt.ausgeblendet) ? gemerkt.ausgeblendet : []);
+    baueMeineKnoepfe();
+    aktualisiereMarker();
     stecker = new Set(Array.isArray(gemerkt.stecker) ? gemerkt.stecker : []);
     baueSteckerKnoepfe();
     $("quelle").textContent =

@@ -1,0 +1,221 @@
+{
+"stand": "Oktober 2026",
+"tarife": [
+{
+"betreiber": "EnBW mobility+ AG und Co.KG",
+"name": "Ad-hoc",
+"typ": "adhoc",
+"grund": null,
+"ac": 70,
+"dc": 79,
+"sicherheit": "gefunden"
+},
+{
+"betreiber": "EnBW mobility+ AG und Co.KG",
+"name": "EnBW Tarif S",
+"typ": "abo",
+"grund": 0,
+"ac": 56,
+"dc": 56,
+"sicherheit": "gefunden"
+},
+{
+"betreiber": "EnBW mobility+ AG und Co.KG",
+"name": "EnBW Tarif M",
+"typ": "abo",
+"grund": 5.99,
+"ac": 46,
+"dc": 46,
+"sicherheit": "gefunden"
+},
+{
+"betreiber": "EnBW mobility+ AG und Co.KG",
+"name": "EnBW Tarif L",
+"typ": "abo",
+"grund": 11.99,
+"ac": 39,
+"dc": 39,
+"sicherheit": "gefunden"
+},
+{
+"betreiber": "BP Europa SE",
+"name": "Ad-hoc",
+"typ": "adhoc",
+"grund": null,
+"ac": 59,
+"dc": 69,
+"sicherheit": "gefunden"
+},
+{
+"betreiber": "BP Europa SE",
+"name": "Aral/BP Klassik",
+"typ": "abo",
+"grund": 0,
+"ac": 47,
+"dc": 52,
+"sicherheit": "gefunden"
+},
+{
+"betreiber": "BP Europa SE",
+"name": "Aral/BP Extra",
+"typ": "abo",
+"grund": 2.99,
+"ac": 41,
+"dc": 46,
+"sicherheit": "gefunden"
+},
+{
+"betreiber": "IONITY GmbH",
+"name": "Ad-hoc",
+"typ": "adhoc",
+"grund": null,
+"ac": null,
+"dc": 72,
+"sicherheit": "gefunden"
+},
+{
+"betreiber": "IONITY GmbH",
+"name": "IONITY Go",
+"typ": "abo",
+"grund": 0,
+"ac": null,
+"dc": 68,
+"sicherheit": "gefunden"
+},
+{
+"betreiber": "Lidl Dienstleistung GmbH & Co. KG",
+"name": "Lidl Plus App",
+"typ": "karte",
+"grund": 0,
+"ac": 29,
+"dc": 44,
+"sicherheit": "gefunden"
+},
+{
+"betreiber": "Kaufland Dienstleistung GmbH & Co. KG",
+"name": "Ad-hoc",
+"typ": "adhoc",
+"grund": null,
+"ac": 48,
+"dc": 78,
+"sicherheit": "gefunden"
+},
+{
+"betreiber": "Kaufland Dienstleistung GmbH & Co. KG",
+"name": "Kaufland App",
+"typ": "karte",
+"grund": 0,
+"ac": 29,
+"dc": 44,
+"sicherheit": "gefunden"
+},
+{
+"betreiber": "Stadtwerke Schweinfurt GmbH",
+"name": "Ad-hoc",
+"typ": "adhoc",
+"grund": null,
+"ac": 55,
+"dc": 55,
+"sicherheit": "gefunden"
+},
+{
+"betreiber": "Stadtwerke Schweinfurt GmbH",
+"name": "Stadtwerke Schweinfurt Stromkunde",
+"typ": "karte",
+"grund": 0,
+"ac": 39,
+"dc": 39,
+"sicherheit": "gefunden"
+},
+{
+"betreiber": "Städtische Betriebe Haßfurt GmbH",
+"name": "Ad-hoc",
+"typ": "adhoc",
+"grund": null,
+"ac": 49,
+"dc": 65,
+"sicherheit": "gefunden"
+},
+{
+"betreiber": "Städtische Betriebe Haßfurt GmbH",
+"name": "Stadtwerke Haßfurt Stromkunde",
+"typ": "karte",
+"grund": 0,
+"ac": 39,
+"dc": 54,
+"sicherheit": "gefunden"
+},
+{
+"betreiber": "ÜZ Mainfranken eG",
+"name": "Ad-hoc",
+"typ": "adhoc",
+"grund": null,
+"ac": 49,
+"dc": 53,
+"sicherheit": "teilweise / unsicher"
+},
+{
+"betreiber": "ÜZ Mainfranken eG",
+"name": "ÜZ Ladekarte (Stromkunde)",
+"typ": "karte",
+"grund": 1,
+"ac": 44,
+"dc": 48,
+"sicherheit": "teilweise / unsicher"
+},
+{
+"betreiber": "deer GmbH",
+"name": "Ad-hoc",
+"typ": "adhoc",
+"grund": null,
+"ac": 49,
+"dc": 49,
+"sicherheit": "gefunden"
+},
+{
+"betreiber": "deer GmbH",
+"name": "deer Tarif",
+"typ": "abo",
+"grund": 0,
+"ac": 46,
+"dc": 46,
+"sicherheit": "gefunden"
+},
+{
+"betreiber": "Cramermühle GmbH & Co. KG",
+"name": "Ad-hoc",
+"typ": "adhoc",
+"grund": null,
+"ac": 46,
+"dc": null,
+"sicherheit": "gefunden"
+},
+{
+"betreiber": "EWE Go GmbH",
+"name": "Ad-hoc",
+"typ": "adhoc",
+"grund": null,
+"ac": null,
+"dc": 84,
+"sicherheit": "gefunden"
+},
+{
+"betreiber": "EWE Go GmbH",
+"name": "EWE Go Vertrag",
+"typ": "abo",
+"grund": 0,
+"ac": 52,
+"dc": 52,
+"sicherheit": "gefunden"
+},
+{
+"betreiber": "Pfalzwerke AG",
+"name": "Ad-hoc",
+"typ": "adhoc",
+"grund": null,
+"ac": 58,
+"dc": 79,
+"sicherheit": "gefunden"
+}
+]
+}

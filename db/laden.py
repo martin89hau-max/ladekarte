@@ -40,6 +40,21 @@ with psycopg.connect(url) as con, con.cursor() as cur:
                VALUES (%s,'Standard',%s,%s,%s,%s,%s,%s)""",
             (bid, b.get("ac"), b.get("dc"), b.get("hinweis"), b.get("link"), b.get("status"), preise["stand"]))
 
+    zw = json.loads((WURZEL / "daten/tarife.json").read_text(encoding="utf-8"))
+    for t in zw["tarife"]:
+        cur.execute(
+            """INSERT INTO zahlungswege (name,typ,grundgebuehr_monat) VALUES (%s,%s,%s)
+               ON CONFLICT (name) DO UPDATE SET typ=EXCLUDED.typ, grundgebuehr_monat=EXCLUDED.grundgebuehr_monat
+               RETURNING id""", (t["name"], t["typ"], t["grund"]))
+        zid = cur.fetchone()[0]
+        cur.execute("SELECT id FROM betreiber WHERE name=%s", (t["betreiber"],))
+        bid = cur.fetchone()[0]
+        cur.execute("DELETE FROM tarife WHERE betreiber_id=%s AND zahlungsweg_id=%s AND NOT bestaetigt", (bid, zid))
+        cur.execute(
+            """INSERT INTO tarife (betreiber_id,zahlungsweg_id,bezeichnung,preis_ac_ct,preis_dc_ct,sicherheit,recherchiert)
+               VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+            (bid, zid, t["name"], t["ac"], t["dc"], t["sicherheit"], zw["stand"]))
+
     cur.execute("""UPDATE betreiber b SET standorte = (SELECT count(*) FROM stationen s WHERE b.name = ANY(s.betreiber))""")
 
     for sid, p in preise["standorte"].items():
