@@ -492,7 +492,7 @@
 
 <div class="suchchip" id="suchchip" hidden>
   <button type="button" class="suchchip-text" id="suchchip-text" title="In der Liste ändern"></button>
-  <button type="button" class="x" id="suchchip-weg" aria-label="Suche und Stecker-Auswahl aufheben">×</button>
+  <button type="button" class="x" id="suchchip-weg" aria-label="Suche und Auswahl aufheben">×</button>
 </div>
 
 <section class="liste" id="liste" aria-label="Ladesäulen in der Nähe" hidden>
@@ -513,6 +513,7 @@
       <input type="search" id="suche" placeholder="Ort, PLZ, Straße oder Betreiber"
         autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search" aria-label="Suchen">
     </label>
+    <div class="stecker preisfilter"><button type="button" id="nur-preis" aria-pressed="false">Nur mit Preis</button></div>
     <div class="stecker" id="stecker" role="group" aria-label="Nur mit diesem Stecker"></div>
     <p class="bezug" id="bezug" aria-live="polite"></p>
   </div>
@@ -606,7 +607,7 @@ function ladeEinstellungen() {
   try { return JSON.parse(localStorage.getItem(SPEICHER)) || {}; } catch { return {}; }
 }
 function speichereEinstellungen() {
-  try { localStorage.setItem(SPEICHER, JSON.stringify({ filter, stecker: [...stecker] })); } catch {}
+  try { localStorage.setItem(SPEICHER, JSON.stringify({ filter, nurPreis, stecker: [...stecker] })); } catch {}
 }
 function routeLink(st) {
   const ziel = `${st.lat},${st.lon}`;
@@ -638,6 +639,7 @@ L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
 const markerEbene = L.layerGroup().addTo(karte);
 let alle = [];          // [{ st, marker }]
 let filter = "alle";    // Ladeleistung: alle | dc | hpc
+let nurPreis = false;   // nur Standorte mit bekanntem Preis
 let stecker = new Set();// gewählte Stecker-Gruppen, z. B. "CCS"
 let suche = "";         // Suchtext aus der Liste
 let ansicht = "karte";  // karte | liste
@@ -691,6 +693,7 @@ function bereite(st) {
 function passt(st) {
   if (filter === "dc" && !st.dc) return false;
   if (filter === "hpc" && !(st.kwMax >= 150)) return false;
+  if (nurPreis && !kurzPreis(st)) return false;
   if (stecker.size) {
     const ok = STECKER_GRUPPEN.some((g) => stecker.has(g.name) && g.passt.some((n) => st._stecker.has(n)));
     if (!ok) return false;
@@ -717,6 +720,7 @@ function zeichne() {
   $("zaehler").textContent = `${standorte} Standort${standorte === 1 ? "" : "e"}, ${punkte} Ladepunkt${punkte === 1 ? "" : "e"}`;
   // Auf der Karte anzeigen, dass nicht alles zu sehen ist (Stecker und Suche stellt man in der Liste ein)
   const teile = [];
+  if (nurPreis) teile.push("Mit Preis");
   if (stecker.size) teile.push(`Nur ${[...stecker].join(", ")}`);
   if (suche) teile.push(`„${suche}“`);
   $("suchchip").hidden = !teile.length;
@@ -843,7 +847,17 @@ function hebeSucheAuf() {
   $("suche").value = "";
   zeichne();
 }
+function setzeNurPreis(an) {
+  nurPreis = an;
+  $("nur-preis").setAttribute("aria-pressed", String(an));
+}
+$("nur-preis").addEventListener("click", () => {
+  setzeNurPreis(!nurPreis);
+  speichereEinstellungen();
+  zeichne();
+});
 function hebeSteckerAuf() {
+  setzeNurPreis(false);
   stecker.clear();
   speichereEinstellungen();
   baueSteckerKnoepfe();
@@ -1069,6 +1083,7 @@ async function lade() {
     // Gemerkte Filter wiederherstellen
     const gemerkt = ladeEinstellungen();
     if (["alle", "dc", "hpc"].includes(gemerkt.filter)) setzeFilter(gemerkt.filter);
+    setzeNurPreis(gemerkt.nurPreis === true);
     stecker = new Set(Array.isArray(gemerkt.stecker) ? gemerkt.stecker : []);
     baueSteckerKnoepfe();
     $("quelle").textContent =
