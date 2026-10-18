@@ -8,7 +8,7 @@
 //
 // Wenn du diese Datei änderst, VERSION hochzählen, damit Handys die neue Fassung holen.
 
-const VERSION = "v4";
+const VERSION = "v5";
 const HUELLE = `ladekarte-huelle-${VERSION}`;
 const DATEN = "ladekarte-daten";
 const KACHELN = "ladekarte-kacheln";
@@ -18,6 +18,7 @@ const NETZ_WARTEZEIT = 5000;      // so lange aufs Netz warten, dann gespeichert
 
 const EIGENE_DATEIEN = [
   "./",
+  "planer.js",
   "manifest.webmanifest",
   "icon-192.png",
   "icon-512.png",
@@ -61,7 +62,7 @@ self.addEventListener("fetch", (ev) => {
     if (url.origin === location.origin && /\/(index\.html)?$/.test(url.pathname)) {
       ev.respondWith(erstNetz(req, HUELLE, "./"));
     }
-  } else if (url.origin === location.origin && /\/daten\/(standorte|preise|tarife)\.json$/.test(url.pathname)) {
+  } else if (url.origin === location.origin && /\/daten\/(standorte|preise|tarife|de)\.json$/.test(url.pathname)) {
     ev.respondWith(erstNetz(req, DATEN));
   } else if (url.hostname.endsWith("tile.openstreetmap.org")) {
     ev.respondWith(kachel(ev));

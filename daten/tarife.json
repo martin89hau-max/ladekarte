@@ -216,6 +216,60 @@
 "ac": 58,
 "dc": 79,
 "sicherheit": "gefunden"
+},
+{
+"betreiber": "Fastned Deutschland GmbH & Co. KG",
+"name": "Ad-hoc",
+"typ": "adhoc",
+"grund": null,
+"ac": null,
+"dc": 69,
+"sicherheit": "gefunden"
+},
+{
+"betreiber": "Fastned Deutschland GmbH & Co. KG",
+"name": "Fastned App (mit Karte)",
+"typ": "karte",
+"grund": 0,
+"ac": null,
+"dc": 62,
+"sicherheit": "gefunden"
+},
+{
+"betreiber": "Fastned Deutschland GmbH & Co. KG",
+"name": "Fastned Gold",
+"typ": "abo",
+"grund": 11.99,
+"ac": null,
+"dc": 48,
+"sicherheit": "teilweise / unsicher"
+},
+{
+"betreiber": "MVV Energie AG",
+"name": "Ad-hoc",
+"typ": "adhoc",
+"grund": null,
+"ac": null,
+"dc": 69,
+"sicherheit": "teilweise / unsicher"
+},
+{
+"betreiber": "BayWa Mobility Solutions GmbH",
+"name": "Ad-hoc",
+"typ": "adhoc",
+"grund": null,
+"ac": null,
+"dc": 79,
+"sicherheit": "teilweise / unsicher"
+},
+{
+"betreiber": "BayWa Mobility Solutions GmbH",
+"name": "BayWa Card",
+"typ": "karte",
+"grund": 0,
+"ac": null,
+"dc": 59,
+"sicherheit": "teilweise / unsicher"
 }
 ]
 }
