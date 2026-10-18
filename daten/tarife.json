@@ -270,6 +270,24 @@
 "ac": null,
 "dc": 59,
 "sicherheit": "teilweise / unsicher"
+},
+{
+"betreiber": "N-ERGIE Aktiengesellschaft",
+"name": "Ad-hoc",
+"typ": "adhoc",
+"grund": null,
+"ac": 48,
+"dc": 58,
+"sicherheit": "teilweise / unsicher"
+},
+{
+"betreiber": "Autostrom plus GmbH",
+"name": "Ad-hoc",
+"typ": "adhoc",
+"grund": null,
+"ac": null,
+"dc": 59,
+"sicherheit": "teilweise / unsicher"
 }
 ]
 }
