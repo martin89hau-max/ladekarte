@@ -80,6 +80,47 @@ function entlangDerRoute(punkte, standorte, maxAbstandKm, filter) {
   return treffer;
 }
 
+// Zeit und Kosten für einen Ladestopp: laden = geladene kWh
+function ladeStopp(k, laden, auto) {
+  const kw = Math.max(1, Math.min(k.kw, auto.maxKw) * PLAN.kurveFaktor);
+  const minuten = laden / kw * 60 + PLAN.ladeAufschlagMin + 2 * k.abstand / PLAN.mittleresTempo * 60;
+  return { minuten, euro: laden * (k.ct ?? PLAN.ersatzPreisCt) / 100 };
+}
+
+// Eine vorgegebene Folge von Stopps (Nummern in kandidaten) durchrechnen, z. B. nach Änderungen
+// von Hand. Geladen wird an jedem Stopp nur so viel, wie bis zum nächsten Halt (mit Reserve)
+// nötig ist, höchstens bis zum Ladeziel. Probleme stehen als Texte in warnungen.
+function bewerten(gesamtKm, kandidaten, auto, indices) {
+  const kwhJeKm = auto.verbrauch / 100;
+  const reserve = auto.akku * auto.reserve / 100;
+  const deckel = auto.akku * auto.ziel / 100;
+  const reihe = [...new Set(indices)].sort((a, b) => kandidaten[a].s - kandidaten[b].s);
+  const stopps = [], warnungen = [];
+  let akku = auto.akku * auto.start / 100, lastS = 0, minuten = 0, euro = 0;
+  for (let n = 0; n < reihe.length; n++) {
+    const k = kandidaten[reihe[n]];
+    akku -= ((k.s - lastS) + 2 * k.abstand) * kwhJeKm;           // Ankunft am Stopp
+    const warn = [];
+    if (akku < 0) { warn.push("Bis hierher reicht der Akku nicht."); akku = 0; }
+    else if (akku < reserve * 0.999) warn.push("Ankunft unter der Reserve.");
+    const kj = n + 1 < reihe.length ? kandidaten[reihe[n + 1]] : null;
+    const naechster = kj ? (kj.s - k.s) + 2 * kj.abstand : gesamtKm - k.s;
+    const ziel = Math.min(naechster * kwhJeKm + reserve, deckel);
+    const laden = Math.max(0, ziel - akku);
+    if (ziel < naechster * kwhJeKm + reserve - 1e-6) warn.push("Bis zum nächsten Halt ist es zu weit für das Ladeziel.");
+    const e = ladeStopp(k, laden, auto);
+    stopps.push({ index: reihe[n], kWh: laden, von: akku / auto.akku * 100, bis: (akku + laden) / auto.akku * 100,
+      minuten: e.minuten, euro: e.euro, warnungen: warn });
+    minuten += e.minuten; euro += e.euro;
+    akku += laden; lastS = k.s;
+  }
+  const rest = gesamtKm - lastS;
+  const ankunft = akku - rest * kwhJeKm;
+  if (ankunft < 0) warnungen.push("Das Ziel ist mit diesen Stopps nicht erreichbar.");
+  else if (ankunft < reserve * 0.999) warnungen.push("Ankunft am Ziel unter der Reserve.");
+  return { stopps, minuten, euro, zielProzent: ankunft / auto.akku * 100, warnungen };
+}
+
 // Beste Ladestopps für eine Wertung finden.
 //  gesamtKm: Länge der Route; kandidaten: [{s, abstand, kw, ct}] nach s sortiert
 //  auto: {akku, verbrauch, maxKw, start, reserve, ziel}  (akku in kWh, verbrauch kWh/100 km, Rest in %)
@@ -98,11 +139,7 @@ function planen(gesamtKm, kandidaten, auto, wertung) {
   if (maxHop <= 0) return null;
 
   const umweg = (k) => 2 * k.abstand;                    // Hin und zurück zur Säule
-  const stopp = (k, laden) => {
-    const kw = Math.max(1, Math.min(k.kw, auto.maxKw) * PLAN.kurveFaktor);
-    const minuten = laden / kw * 60 + PLAN.ladeAufschlagMin + umweg(k) / PLAN.mittleresTempo * 60;
-    return { minuten, euro: laden * (k.ct ?? PLAN.ersatzPreisCt) / 100 };
-  };
+  const stopp = (k, laden) => ladeStopp(k, laden, auto);
 
   // Direkt ohne Stopp?
   if (gesamtKm <= ersteReichweite) return { stopps: [], minuten: 0, euro: 0 };
@@ -200,13 +237,15 @@ function alleVarianten(gesamtKm, kandidaten, auto) {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { PLAN, zerlege, entlangDerRoute, planen, alleVarianten, entfernungKm, groessteLuecke };
+  module.exports = { PLAN, zerlege, entlangDerRoute, planen, bewerten, ladeStopp, alleVarianten, entfernungKm, groessteLuecke };
 }
 
 // ===================== Oberfläche (nur im Browser) =====================
 
 if (typeof document !== "undefined" && typeof karte !== "undefined") {
   const DE_URL = "daten/de.json";
+  const FR_URL = "daten/fr.json";
+  let frStatus = "";   // "", "geladen" oder "fehlt"
   const PLANER_SPEICHER = "ladekarte.planer";
   const AUTO_STANDARD = { akku: 60, verbrauch: 20, maxKw: 100, start: 80, reserve: 10, ziel: 80, minKw: 50, umweg: 3 };
 
@@ -256,20 +295,42 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     return deDaten;
   }
 
+  // Frankreich-Daten nur laden, wenn die Route in den Westen führt, und an die Deutschland-Daten anhängen
+  async function ladeFrankreich(punkte) {
+    if (frStatus || !punkte.some((p) => p.lon < 8.3 && p.lat < 51.2)) return;
+    frStatus = "fehlt";
+    try {
+      $("planer-status").textContent = "Lade Ladestationen für Frankreich …";
+      const a = await fetch(FR_URL);
+      if (!a.ok) return;
+      const fr = await a.json();
+      const bo = deDaten.betreiber.length, oo = deDaten.orte.length;
+      deDaten.betreiber = deDaten.betreiber.concat(fr.betreiber);
+      deDaten.orte = deDaten.orte.concat(fr.orte);
+      for (const z of fr.standorte) {
+        z[4] = z[4] < 0 ? -1 : z[4] + bo;
+        z[7] = z[7] < 0 ? -1 : z[7] + oo;
+        deDaten.standorte.push(z);
+      }
+      frStatus = "geladen";
+    } catch (e) { console.warn("Frankreich-Daten nicht geladen", e); }
+  }
+
   async function finde(text) {
     const t = text.trim();
     if (!t) throw new Error("Bitte Start und Ziel eintragen.");
     const m = t.match(/^(-?\d+[.,]\d+)\s*[,;]\s*(-?\d+[.,]\d+)$/);
     if (m) return { lat: parseFloat(m[1].replace(",", ".")), lon: parseFloat(m[2].replace(",", ".")), name: t };
-    const a = await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=de&accept-language=de&q=" + encodeURIComponent(t));
+    const a = await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=de,fr,at,ch,nl,be,lu,cz,pl,dk,it,es&accept-language=de&q=" + encodeURIComponent(t));
     if (!a.ok) throw new Error("Ortssuche nicht erreichbar.");
     const l = await a.json();
     if (!l.length) throw new Error(`„${t}“ nicht gefunden.`);
     return { lat: parseFloat(l[0].lat), lon: parseFloat(l[0].lon), name: l[0].display_name.split(",").slice(0, 2).join(",") };
   }
 
-  async function hole(von, nach) {
-    const url = `https://router.project-osrm.org/route/v1/driving/${von.lon},${von.lat};${nach.lon},${nach.lat}?overview=full&geometries=geojson`;
+  async function hole(von, nach, via) {
+    const punkte = [von, ...(via ? [via] : []), nach].map((p) => `${p.lon},${p.lat}`).join(";");
+    const url = `https://router.project-osrm.org/route/v1/driving/${punkte}?overview=full&geometries=geojson`;
     const a = await fetch(url);
     if (!a.ok) throw new Error("Routenberechnung nicht erreichbar.");
     const d = await a.json();
@@ -286,19 +347,20 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     const ausgeschlossen = ausgeblendet;
     const filter = (z) => {
       if (!z[3] || z[2] < auto.minKw) return false;
-      const b = [].concat(z[4]).map((i) => deDaten.betreiber[i]);
-      return !(ausgeschlossen.size && b.every((x) => ausgeschlossen.has(x)));
+      const b = [].concat(z[4]).map((i) => deDaten.betreiber[i]).filter(Boolean);
+      return !(ausgeschlossen.size && b.length && b.every((x) => ausgeschlossen.has(x)));
     };
     const treffer = entlangDerRoute(punkte, deDaten.standorte, auto.umweg, filter);
     return treffer.map((t) => {
       const z = t.zeile;
-      const namen = [].concat(z[4]).map((i) => deDaten.betreiber[i]);
+      const namen = [].concat(z[4]).map((i) => deDaten.betreiber[i]).filter(Boolean);
+      if (!namen.length) namen.push("Betreiber unbekannt");
       const p = preisFuer(namen, true);
       return { s: t.s, abstand: t.abstand, kw: z[2], ct: p ? p.ct : null, preis: p, zeile: z, namen };
     });
   }
 
-  function zeichnePlan(route, punkte, kandidaten, plan, von, nach) {
+  function zeichnePlan(route, plan, kandidaten, von, nach, anpassen) {
     routeEbene.clearLayers();
     const linie = L.polyline(route.geometry.coordinates.map(([lo, la]) => [la, lo]), { color: "#2E74B5", weight: 5, opacity: .85 }).addTo(routeEbene);
     const punktIcon = (t) => L.divIcon({ className: "marker", html: `<span class="routenpunkt">${t}</span>`, iconSize: [0, 0] });
@@ -309,28 +371,67 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
       const m = L.marker([k.zeile[0], k.zeile[1]], { icon: punktIcon(n + 1), zIndexOffset: 3000 }).addTo(routeEbene);
       m.bindPopup(stoppText(s, k, n));
     });
-    karte.fitBounds(linie.getBounds(), { paddingTopLeft: [20, 90], paddingBottomRight: [20, 120] });
+    if (anpassen) {
+      const links = amRechner.matches ? 450 : 20;
+      karte.fitBounds(linie.getBounds(), { paddingTopLeft: [links, 90], paddingBottomRight: [20, amRechner.matches ? 40 : 120] });
+    }
   }
 
+  const ortVon = (k) => (k.zeile[7] >= 0 ? deDaten.orte[k.zeile[7]] : "Ladestopp");
+  const preisKurz = (k) => (k.preis ? `${zahlText(k.preis.ct)} ct${k.preis.unsicher ? "~" : ""}` : `≈${PLAN.ersatzPreisCt} ct?`);
+
   function stoppText(s, k, n) {
-    const ort = k.zeile[7] >= 0 ? deDaten.orte[k.zeile[7]] : "";
     const preis = k.preis ? `${zahlText(k.preis.ct)} ct (${esc(k.preis.name)})${k.preis.unsicher ? ", unsicher" : ""}` : `ca. ${PLAN.ersatzPreisCt} ct (geschätzt)`;
-    return `<b>${n + 1}. ${esc(ort || "Ladestopp")}</b><br>${esc(k.namen.join(" / "))}<br>${zahlText(k.kw)} kW · ${zahlText(k.abstand, 1)} km neben der Route<br>` +
+    return `<b>${n + 1}. ${esc(ortVon(k))}</b><br>${esc(k.namen.join(" / "))}<br>${zahlText(k.kw)} kW · ${zahlText(k.abstand, 1)} km neben der Route<br>` +
       `Laden ${zahlText(s.von)} → ${zahlText(s.bis)} %, ${zeitText(s.minuten)}, ca. ${zahlText(s.euro, 2)} €<br>Preis: ${preis}<br>` +
       `<a href="${esc(routeLink({ lat: k.zeile[0], lon: k.zeile[1] }))}" target="_blank" rel="noopener">Hinfahren</a>`;
   }
 
-  function zeigeErgebnis(route, punkte, kandidaten, varianten, von, nach) {
+  // Link, der die ganze Route mit den Stopps in einer Karten-App öffnet
+  function mapsLink(plan, kandidaten, von, nach) {
+    const wege = plan.stopps.map((s) => `${kandidaten[s.index].zeile[0]},${kandidaten[s.index].zeile[1]}`);
+    if (letzteRoute?.via) wege.unshift(`${letzteRoute.via.lat},${letzteRoute.via.lon}`);
+    return "https://www.google.com/maps/dir/?api=1&travelmode=driving" +
+      `&origin=${von.lat},${von.lon}&destination=${nach.lat},${nach.lon}` + (wege.length ? `&waypoints=${wege.join("%7C")}` : "");
+  }
+
+  // ---- Zusammenfassung und Leiste unten (wenn der Planer zu ist) ----
+  function planTexte(plan) {
+    const R = letzteRoute;
+    const fahr = R.route.duration / 60;
+    return `${zeitText(fahr + plan.minuten)} · ${plan.stopps.length} Stopp${plan.stopps.length === 1 ? "" : "s"} · ca. ${zahlText(plan.euro, 2)} €`;
+  }
+  function aktualisiereLeiste() {
+    const offen = $("planer").classList.contains("offen");
+    const plan = letzteRoute && (edit?.plan || letzteRoute.gezeigt);
+    $("planer-leiste").hidden = !(letzteRoute && plan && !offen);
+    if (plan && letzteRoute) $("planer-leiste-text").textContent = planTexte(plan);
+  }
+  function schliesse_planer() {
+    $("planer").classList.remove("offen");
+    $("route-knopf").setAttribute("aria-expanded", "false");
+    aktualisiereLeiste();
+  }
+
+  // ---- Ergebnis: Varianten zur Auswahl ----
+  let edit = null;   // {indices, picker, sort, plan}
+
+  function zeigeErgebnis(R) {
+    const { route, punkte, kandidaten, varianten, von, nach } = R;
+    edit = null;
     const fahrMin = route.duration / 60;
     const km = route.distance / 1000;
-    const kopf = `<p class="leise">${esc(von.name)} → ${esc(nach.name)}: ${zahlText(km)} km, reine Fahrzeit ${zeitText(fahrMin)}.</p>`;
+    const via = R.via ? ` über ${esc(R.via.name)}` : "";
+    const kopf = `<p class="leise">${esc(von.name)} → ${esc(nach.name)}${via}: ${zahlText(km)} km, reine Fahrzeit ${zeitText(fahrMin)}.</p>`;
     if (!varianten.length) {
       const l = groessteLuecke(km, kandidaten);
       const reichweite = (auto.akku * (auto.ziel - auto.reserve) / 100) / (auto.verbrauch / 100);
       const grund = l.km > reichweite
-        ? `Zwischen Kilometer ${zahlText(l.ab)} und ${zahlText(l.ab + l.km)} gibt es keine passende Ladestation in den Daten (sie gelten nur für Deutschland), das ist mehr als die Reichweite von etwa ${zahlText(reichweite)} km zwischen zwei Halten.`
+        ? `Zwischen Kilometer ${zahlText(l.ab)} und ${zahlText(l.ab + l.km)} gibt es keine passende Ladestation in den Daten (${frStatus === "geladen" ? "die Daten gelten für Deutschland und Frankreich" : "die Daten gelten nur für Deutschland"}), das ist mehr als die Reichweite von etwa ${zahlText(reichweite)} km zwischen zwei Halten.`
         : `Mit diesen Einstellungen ist keine Route mit Ladestopps möglich. Probiere einen größeren Abstand zur Route, eine niedrigere Mindestleistung oder mehr Ladestand.`;
       $("planer-ergebnis").innerHTML = kopf + `<p class="warnung">${grund}</p>`;
+      letzteRoute = null;
+      aktualisiereLeiste();
       return;
     }
     $("planer-ergebnis").innerHTML = kopf + varianten.map((v, n) => {
@@ -338,27 +439,135 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
       const ersatz = v.stopps.some((s) => kandidaten[s.index].ct == null);
       const stops = v.stopps.map((s, i) => {
         const k = kandidaten[s.index];
-        const ort = k.zeile[7] >= 0 ? deDaten.orte[k.zeile[7]] : "Ladestopp";
-        const preis = k.preis ? `${zahlText(k.preis.ct)} ct${k.preis.unsicher ? "~" : ""}` : `≈${PLAN.ersatzPreisCt} ct?`;
-        return `<li><b>${i + 1}. ${esc(ort)}</b> · ${esc(k.namen[0])}<br><span class="leise">${zahlText(k.kw)} kW, Laden ${zahlText(s.von)}→${zahlText(s.bis)} %, ${zeitText(s.minuten)}, ${zahlText(s.euro, 2)} € (${preis})</span></li>`;
+        return `<li><b>${i + 1}. ${esc(ortVon(k))}</b> · ${esc(k.namen[0])}<br><span class="leise">${zahlText(k.kw)} kW, Laden ${zahlText(s.von)}→${zahlText(s.bis)} %, ${zeitText(s.minuten)}, ${zahlText(s.euro, 2)} € (${preisKurz(k)})</span></li>`;
       }).join("");
       return `<article class="variante" data-variante="${n}">
         <h3>${esc(v.namen.join(" und "))}</h3>
         <p><strong>${zeitText(gesamt)}</strong> gesamt · ${v.stopps.length} Stopp${v.stopps.length === 1 ? "" : "s"} · ca. <strong>${zahlText(v.euro, 2)} €</strong>${ersatz ? " (teils geschätzt)" : ""}</p>
         ${stops ? `<ul class="stopps">${stops}</ul>` : `<p class="leise">Ohne Ladestopp erreichbar.</p>`}
-        <button type="button" class="knopf-leise" data-zeige="${n}">Auf der Karte zeigen</button>
+        <div class="knoepfe"><button type="button" class="knopf-leise" data-zeige="${n}">Auf der Karte zeigen</button>
+        <button type="button" class="knopf-leise" data-bearbeiten="${n}">Bearbeiten</button></div>
       </article>`;
     }).join("") + `<p class="leise">Schätzung mit gleichbleibendem Verbrauch und mittlerer Ladeleistung. Preise sind teils geschätzt (≈) oder unsicher (~). Verbindlich sind Anzeige an der Säule und Tarif des Anbieters.</p>`;
-    letzteRoute = { route, punkte, kandidaten, varianten, von, nach };
-    zeichnePlan(route, punkte, kandidaten, varianten[0], von, nach);
+    letzteRoute = R;
+    R.gezeigt = varianten[0];
+    zeichnePlan(route, varianten[0], kandidaten, von, nach, true);
+    aktualisiereLeiste();
+  }
+
+  // ---- Route bearbeiten: eigene Stopps, live neu gerechnet ----
+  function rendereEditor(anpassen) {
+    const R = letzteRoute;
+    const { route, punkte, kandidaten, von, nach } = R;
+    const gesamtKm = punkte[punkte.length - 1].s;
+    const plan = bewerten(gesamtKm, kandidaten, auto, edit.indices);
+    edit.plan = plan;
+    R.gezeigt = plan;
+    const fahrMin = route.duration / 60;
+    const reihe = plan.stopps;
+    const warnZiel = plan.warnungen.map((w) => `<p class="warnung">${esc(w)}</p>`).join("");
+
+    const wahlListe = (liste) => {
+      const sort = edit.sort || "preis";
+      const sortiert = [...liste].sort(sort === "preis"
+        ? (a, b) => (kandidaten[a].ct ?? PLAN.ersatzPreisCt) - (kandidaten[b].ct ?? PLAN.ersatzPreisCt) || kandidaten[b].kw - kandidaten[a].kw
+        : (a, b) => kandidaten[b].kw - kandidaten[a].kw || (kandidaten[a].ct ?? 99) - (kandidaten[b].ct ?? 99)).slice(0, 12);
+      if (!sortiert.length) return `<p class="leise">Keine passende Ladestation in diesem Abschnitt.</p>`;
+      return `<div class="auswahl"><p class="leise">Sortiert nach
+        <button type="button" class="textknopf" data-sort="preis" ${sort === "preis" ? 'aria-current="true"' : ""}>Preis</button> ·
+        <button type="button" class="textknopf" data-sort="kw" ${sort === "kw" ? 'aria-current="true"' : ""}>Leistung</button>
+        (die besten 12)</p>` + sortiert.map((ci) => {
+        const k = kandidaten[ci];
+        return `<button type="button" class="wahl" data-wahl="${ci}"><b>${esc(ortVon(k))}</b> · ${esc(k.namen[0])}<br><span class="leise">km ${zahlText(k.s)}, ${zahlText(k.kw)} kW, ${preisKurz(k)}, ${zahlText(k.abstand, 1)} km Abstand</span></button>`;
+      }).join("") + `<button type="button" class="knopf-leise" data-abbruch="1">Abbrechen</button></div>`;
+    };
+    const imAbschnitt = (von_s, bis_s) => kandidaten.map((k, i) => i).filter((i) => kandidaten[i].s > von_s + 5 && kandidaten[i].s < bis_s - 5 && !edit.indices.includes(i));
+    const luecke = (pos) => {
+      const hinzu = `<button type="button" class="textknopf" data-hinzu="${pos}">+ Stopp hinzufügen</button>`;
+      if (edit.picker?.modus === "hinzu" && edit.picker.pos === pos) {
+        const sVor = pos === 0 ? 0 : kandidaten[reihe[pos - 1].index].s;
+        const sNach = pos === reihe.length ? gesamtKm : kandidaten[reihe[pos].index].s;
+        return `<li class="luecke">${wahlListe(imAbschnitt(sVor, sNach))}</li>`;
+      }
+      return `<li class="luecke">${hinzu}</li>`;
+    };
+
+    let liste = luecke(0);
+    reihe.forEach((s, n) => {
+      const k = kandidaten[s.index];
+      const warn = s.warnungen.map((w) => `<br><span class="warnung">${esc(w)}</span>`).join("");
+      let zeile = `<li><b>${n + 1}. ${esc(ortVon(k))}</b> · ${esc(k.namen[0])}<br><span class="leise">km ${zahlText(k.s)}, ${zahlText(k.kw)} kW, Laden ${zahlText(s.von)}→${zahlText(s.bis)} %, ${zeitText(s.minuten)}, ${zahlText(s.euro, 2)} € (${preisKurz(k)})</span>${warn}
+        <div class="knoepfe"><button type="button" class="textknopf" data-ersetzen="${n}">Ersetzen</button>
+        <button type="button" class="textknopf" data-entfernen="${n}">Entfernen</button></div>`;
+      if (edit.picker?.modus === "ersetzen" && edit.picker.pos === n) {
+        const nah = kandidaten.map((_, i) => i).filter((i) => Math.abs(kandidaten[i].s - k.s) <= 40 && i !== s.index && !edit.indices.includes(i));
+        zeile += wahlListe(nah);
+      }
+      liste += zeile + `</li>` + luecke(n + 1);
+    });
+
+    $("planer-ergebnis").innerHTML = `<p class="leise">${esc(von.name)} → ${esc(nach.name)}: ${zahlText(route.distance / 1000)} km, reine Fahrzeit ${zeitText(fahrMin)}.</p>
+      <article class="variante bearbeiten">
+        <h3>Meine Route</h3>
+        <p><strong>${zeitText(fahrMin + plan.minuten)}</strong> gesamt · ${reihe.length} Stopp${reihe.length === 1 ? "" : "s"} · ca. <strong>${zahlText(plan.euro, 2)} €</strong> · Ankunft mit ${zahlText(plan.zielProzent)} %</p>
+        ${warnZiel}
+        <ul class="stopps">${liste}</ul>
+        <div class="knoepfe">
+          <a class="knopf-leise" href="${esc(mapsLink(plan, kandidaten, von, nach))}" target="_blank" rel="noopener">In Karten-App öffnen</a>
+          <button type="button" class="knopf-leise" data-zurueck="1">Zurück zu den Vorschlägen</button>
+        </div>
+      </article>
+      <p class="leise">Änderungen rechnen sofort neu. Geladen wird nur so viel, wie bis zum nächsten Halt nötig ist. Preise ≈ geschätzt, ~ unsicher.</p>`;
+    zeichnePlan(route, plan, kandidaten, von, nach, anpassen);
+    aktualisiereLeiste();
   }
 
   $("planer-ergebnis").addEventListener("click", (ev) => {
-    const b = ev.target.closest("button[data-zeige]");
-    if (!b || !letzteRoute) return;
-    const { route, punkte, kandidaten, varianten, von, nach } = letzteRoute;
-    zeichnePlan(route, punkte, kandidaten, varianten[Number(b.dataset.zeige)], von, nach);
-    $("planer").classList.remove("offen");
+    const R = letzteRoute;
+    if (!R) return;
+    const t = ev.target.closest("button, a");
+    if (!t) return;
+    const d = t.dataset;
+    const zeigeKarte = () => { if (!amRechner.matches) schliesse_planer(); };
+    if (d.zeige !== undefined) {
+      R.gezeigt = R.varianten[Number(d.zeige)];
+      zeichnePlan(R.route, R.gezeigt, R.kandidaten, R.von, R.nach, true);
+      zeigeKarte();
+    } else if (d.bearbeiten !== undefined) {
+      edit = { indices: R.varianten[Number(d.bearbeiten)].stopps.map((s) => s.index), picker: null, sort: "preis" };
+      rendereEditor(true);
+    } else if (!edit) {
+      return;
+    } else if (d.entfernen !== undefined) {
+      const s = edit.plan.stopps[Number(d.entfernen)];
+      edit.indices = edit.indices.filter((i) => i !== s.index);
+      edit.picker = null;
+      rendereEditor(false);
+    } else if (d.ersetzen !== undefined) {
+      edit.picker = { modus: "ersetzen", pos: Number(d.ersetzen) };
+      rendereEditor(false);
+    } else if (d.hinzu !== undefined) {
+      edit.picker = { modus: "hinzu", pos: Number(d.hinzu) };
+      rendereEditor(false);
+    } else if (d.wahl !== undefined) {
+      const neu = Number(d.wahl);
+      if (edit.picker?.modus === "ersetzen") {
+        const alt = edit.plan.stopps[edit.picker.pos].index;
+        edit.indices = edit.indices.map((i) => (i === alt ? neu : i));
+      } else {
+        edit.indices = [...edit.indices, neu];
+      }
+      edit.picker = null;
+      rendereEditor(false);
+    } else if (d.sort) {
+      edit.sort = d.sort;
+      rendereEditor(false);
+    } else if (d.abbruch) {
+      edit.picker = null;
+      rendereEditor(false);
+    } else if (d.zurueck) {
+      zeigeErgebnis(R);
+    }
   });
 
   async function planeRoute(ev) {
@@ -368,13 +577,16 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     $("planer-ergebnis").innerHTML = "";
     try {
       $("planer-status").textContent = "Suche Orte …";
-      const [von, nach] = await Promise.all([
+      const viaText = $("planer-via").value.trim();
+      const [von, nach, via] = await Promise.all([
         $("planer-von").value.trim() === "" && ich ? { lat: ich.lat, lon: ich.lon, name: "Mein Standort" } : finde($("planer-von").value),
         finde($("planer-nach").value),
+        viaText ? finde(viaText) : null,
       ]);
       $("planer-status").textContent = "Berechne Route …";
-      const route = await hole(von, nach);
+      const route = await hole(von, nach, via);
       await ladeDeDaten();
+      await ladeFrankreich(zerlege(route.geometry.coordinates));
       $("planer-status").textContent = "Suche Ladestopps …";
       await new Promise((r) => setTimeout(r, 30));          // Anzeige aktualisieren, bevor gerechnet wird
       const punkte = zerlege(route.geometry.coordinates);
@@ -382,7 +594,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
       const gesamtKm = punkte[punkte.length - 1].s;
       const varianten = alleVarianten(gesamtKm, kandidaten, auto);
       $("planer-status").textContent = "";
-      zeigeErgebnis(route, punkte, kandidaten, varianten, von, nach);
+      zeigeErgebnis({ route, punkte, kandidaten, varianten, von, nach, via });
     } catch (e) {
       console.error(e);
       $("planer-status").textContent = "";
@@ -393,18 +605,29 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
   }
   $("planer-form").addEventListener("submit", planeRoute);
 
+  $("planer-tausch").addEventListener("click", () => {
+    const v = $("planer-von").value;
+    $("planer-von").value = $("planer-nach").value;
+    $("planer-nach").value = v;
+  });
+  $("planer-leiste").addEventListener("click", () => {
+    $("planer").classList.add("offen");
+    $("route-knopf").setAttribute("aria-expanded", "true");
+    aktualisiereLeiste();
+  });
+
   $("route-knopf").addEventListener("click", () => {
     const offen = $("planer").classList.toggle("offen");
     $("route-knopf").setAttribute("aria-expanded", String(offen));
-    if (offen) $("planer-nach").focus();
+    if (offen && !letzteRoute) $("planer-nach").focus();
+    aktualisiereLeiste();
   });
-  $("planer-zu").addEventListener("click", () => {
-    $("planer").classList.remove("offen");
-    $("route-knopf").setAttribute("aria-expanded", "false");
-  });
+  $("planer-zu").addEventListener("click", schliesse_planer);
   $("planer-weg").addEventListener("click", () => {
     routeEbene.clearLayers();
     letzteRoute = null;
+    edit = null;
     $("planer-ergebnis").innerHTML = "";
+    aktualisiereLeiste();
   });
 }

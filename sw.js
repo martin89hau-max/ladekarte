@@ -8,7 +8,7 @@
 //
 // Wenn du diese Datei änderst, VERSION hochzählen, damit Handys die neue Fassung holen.
 
-const VERSION = "v5";
+const VERSION = "v7";
 const HUELLE = `ladekarte-huelle-${VERSION}`;
 const DATEN = "ladekarte-daten";
 const KACHELN = "ladekarte-kacheln";
@@ -62,7 +62,7 @@ self.addEventListener("fetch", (ev) => {
     if (url.origin === location.origin && /\/(index\.html)?$/.test(url.pathname)) {
       ev.respondWith(erstNetz(req, HUELLE, "./"));
     }
-  } else if (url.origin === location.origin && /\/daten\/(standorte|preise|tarife|de)\.json$/.test(url.pathname)) {
+  } else if (url.origin === location.origin && /\/daten\/(standorte|preise|tarife|de|fr)\.json$/.test(url.pathname)) {
     ev.respondWith(erstNetz(req, DATEN));
   } else if (url.hostname.endsWith("tile.openstreetmap.org")) {
     ev.respondWith(kachel(ev));

@@ -356,6 +356,24 @@
   .variante p { margin: 4px 0; }
   .variante ul.stopps { margin: 8px 0; padding: 0; list-style: none; }
   .variante li { margin: 6px 0; font-size: .9375rem; }
+  .variante .knoepfe, .variante li .knoepfe { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin-top: 8px; }
+  .variante a.knopf-leise { display: inline-flex; align-items: center; text-decoration: none; color: var(--blau-akzent); }
+  .variante li.luecke { margin: 2px 0; }
+  .textknopf[aria-current="true"] { font-weight: 800; text-decoration: none; }
+  .auswahl { margin: 8px 0; display: grid; gap: 6px; }
+  .auswahl .wahl {
+    text-align: left; padding: 8px 10px; border: 1px solid var(--linie); border-radius: 8px;
+    background: var(--flaeche); color: var(--tinte); cursor: pointer; font-size: .9375rem; min-height: 44px;
+  }
+  .planer-leiste {
+    position: fixed; z-index: 1150; left: 12px; right: 12px; bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 10px 16px; border: 0; border-radius: 16px; background: var(--blau); color: #fff;
+    box-shadow: var(--schatten); text-align: left; cursor: pointer; font-size: .9375rem;
+  }
+  .planer-leiste[hidden] { display: none; }
+  .planer-leiste-ja { font-weight: 700; text-decoration: underline; }
+  @media (min-width: 700px) { .planer-leiste { display: none !important; } }
   .routenpunkt {
     position: absolute; left: 0; top: 0; transform: translate(-50%, -50%);
     min-width: 26px; height: 26px; box-sizing: border-box; padding: 0 6px; display: flex; align-items: center; justify-content: center;
@@ -548,7 +566,9 @@
   </div>
   <form id="planer-form" novalidate>
     <label>Start (leer = mein Standort)<input type="text" id="planer-von" autocomplete="off" enterkeyhint="next" placeholder="z. B. Schweinfurt"></label>
+    <button type="button" class="textknopf" id="planer-tausch" style="margin-top:8px">⇅ Start und Ziel tauschen</button>
     <label>Ziel<input type="text" id="planer-nach" autocomplete="off" enterkeyhint="go" placeholder="z. B. Hamburg"></label>
+    <label>Route über (optional)<input type="text" id="planer-via" autocomplete="off" enterkeyhint="go" placeholder="z. B. Frankfurt, wenn die Strecke anders laufen soll"></label>
     <details>
       <summary>Mein Auto und Einstellungen</summary>
       <div class="planer-felder" id="planer-felder"></div>
@@ -559,8 +579,13 @@
   <p class="leise" id="planer-status" aria-live="polite"></p>
   <div id="planer-ergebnis"></div>
   <button type="button" class="knopf-leise" id="planer-weg" style="margin-top:14px">Route von der Karte entfernen</button>
-  <p class="leise">Ladestationen: Bundesnetzagentur, nur Deutschland. Orte: Nominatim (OpenStreetMap), Strecke: OSRM-Demoserver. Beides ohne Gewähr.</p>
+  <p class="leise">Ladestationen: Bundesnetzagentur (Deutschland), Base nationale des IRVE (Frankreich, Licence Ouverte). Orte: Nominatim (OpenStreetMap), Strecke: OSRM-Demoserver. Beides ohne Gewähr.</p>
 </section>
+
+<button type="button" class="planer-leiste" id="planer-leiste" hidden>
+  <span class="planer-leiste-text"><b>Meine Route</b><br><span id="planer-leiste-text"></span></span>
+  <span class="planer-leiste-ja">Anzeigen</span>
+</button>
 
 <div class="suchchip" id="suchchip" hidden>
   <button type="button" class="suchchip-text" id="suchchip-text" title="In der Liste ändern"></button>
