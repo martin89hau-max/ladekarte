@@ -130,6 +130,15 @@
     white-space: nowrap;
     cursor: pointer;
   }
+  .preis-schild {
+    position: absolute; left: 0; top: 14px; transform: translateX(-50%);
+    padding: 1px 5px; border-radius: 4px; background: #fff; color: #14212E;
+    border: 1.5px solid var(--blau); font: 700 .75rem/1.3 var(--schrift-schild);
+    white-space: nowrap; box-shadow: 0 1px 3px rgba(0,0,0,.35); pointer-events: none;
+  }
+  .preis-schild.unsicher { border-style: dashed; }
+  .karte-fern .preis-schild { display: none; }
+  .eintrag-preis { font-weight: 600; }
   .platte.dc { background: var(--gelb); color: #14212E; }
   .platte.aktiv { outline: 3px solid var(--blau-akzent); outline-offset: 2px; }
   .marker:focus-visible { outline: none; }
@@ -430,6 +439,7 @@
   .punkte b { margin-left: auto; font-variant-numeric: tabular-nums; }
   .info { margin-top: 14px; }
   .info h3 { margin: 0 0 3px; font-size: .875rem; font-weight: 600; color: var(--tinte-leise); }
+  .preis-hinweis { color: var(--tinte-leise); font-size: .8125rem !important; margin-top: 2px !important; }
   .info p { margin: 0; font-size: .9375rem; line-height: 1.45; }
   .quelle { margin: 18px 0 0; font-size: .75rem; color: var(--tinte-leise); line-height: 1.4; }
 
@@ -558,6 +568,8 @@
 <script>
 // ===================== Einstellungen =====================
 const DATEN_URL = "daten/standorte.json";
+const PREISE_URL = "daten/preise.json";
+let preise = { betreiber: {}, standorte: {}, stand: "" };
 const START_MITTE = [50.03, 10.40];   // zwischen Haßfurt und Schweinfurt
 const START_ZOOM = 10;
 const PUNKTE_UNTER_ZOOM = 12;         // darunter werden die Schilder zu Punkten
@@ -713,15 +725,27 @@ function zeichne() {
   if (ansicht === "liste") zeichneListe();
 }
 
+// Kurzpreis für Schild und Liste: niedrigster ct-Wert aus dem Preistext, "~" wenn unsicher
+function kurzPreis(st) {
+  const p = preise.standorte[st.id];
+  if (!p || p.status === "nicht gefunden" || !p.preis) return null;
+  const zahlen = [...p.preis.matchAll(/(\d+(?:,\d+)?)\s*(?:–\s*\d+\s*)?ct/g)].map((m) => parseFloat(m[1].replace(",", ".")));
+  if (!zahlen.length) return null;
+  const unsicher = p.status !== "gefunden";
+  return { text: `${unsicher ? "~" : "ab "}${String(Math.min(...zahlen)).replace(".", ",")} ct`, unsicher };
+}
+
 function markerFuer(eintrag) {
   const st = eintrag.st;
+  const kp = kurzPreis(st);
   const icon = L.divIcon({
     className: "marker",
-    html: `<span class="platte${st.dc ? " dc" : ""}">${kw(st.kwMax)}</span>`,
+    html: `<span class="platte${st.dc ? " dc" : ""}">${kw(st.kwMax)}</span>` +
+      (kp ? `<span class="preis-schild${kp.unsicher ? " unsicher" : ""}">${kp.text}</span>` : ""),
     iconSize: [0, 0],
     iconAnchor: [0, 0],
   });
-  const titel = `${st.ort}, ${st.strasse}: bis ${kw(st.kwMax)} kW${st.dc ? " (DC)" : ""}`;
+  const titel = `${st.ort}, ${st.strasse}: bis ${kw(st.kwMax)} kW${st.dc ? " (DC)" : ""}${kp ? `, ${kp.text}/kWh` : ""}`;
   const m = L.marker([st.lat, st.lon], {
     icon, title: titel, alt: titel, keyboard: true,
     zIndexOffset: Math.round(st.kwMax),   // starke Säulen liegen oben
@@ -761,6 +785,7 @@ function zeichneListe() {
       <span class="eintrag-text">
         <b>${esc(st._titel)}</b>
         <span>${esc(adresse)}</span>
+        ${kurzPreis(st) ? `<span class="eintrag-preis">${kurzPreis(st).text}/kWh</span>` : ""}
         ${st._ausser ? `<span class="warnung">Derzeit außer Betrieb</span>`
           : st._steckerText ? `<span>${esc(st._steckerText)}</span>` : ""}
       </span>
@@ -948,6 +973,7 @@ function oeffne(eintrag) {
   const oeffnung = einmalig(st.einrichtungen.map((e) => e.oeffnung));
   const parken = einmalig(st.einrichtungen.map((e) => e.parken));
   if (!mehrereBetreiber && st.betreiber[0]) html += info("Betreiber", [st.betreiber[0]]);
+  html += preisBlock(st);
   if (bezahlen.length) html += info("Bezahlen", [bezahlen.join(" · ")]);
   if (oeffnung.length) html += info("Öffnungszeiten", oeffnung);
   if (parken.length) html += info("Parken", parken);
@@ -956,6 +982,18 @@ function oeffne(eintrag) {
   $("blatt").classList.add("offen");
   $("blatt").scrollTop = 0;
   $("blatt-titel").focus({ preventScroll: true });
+}
+
+function preisBlock(st) {
+  const p = preise.standorte[st.id];
+  if (!p) return "";
+  const text = p.status === "nicht gefunden" ? "Preis nicht bekannt" : p.preis;
+  let h = `<div class="info"><h3>Preis (brutto), recherchiert ${esc(preise.stand || "")}</h3><p><strong>${esc(text)}</strong></p>`;
+  if (p.status === "teilweise / unsicher") h += `<p class="preis-hinweis">Unsicher oder nicht bestätigt</p>`;
+  if (p.status === "nicht gefunden") h += `<p class="preis-hinweis">Bitte an der Säule oder in der Lade-App prüfen.</p>`;
+  else if (p.hinweis) h += `<p class="preis-hinweis">${esc(p.hinweis)}</p>`;
+  if (p.link && p.status !== "nicht gefunden") h += `<p class="preis-hinweis"><a href="${esc(p.link)}" target="_blank" rel="noopener">Preisquelle</a></p>`;
+  return h + `<p class="preis-hinweis">Recherchiert im ${esc(preise.stand || "")}, ohne Gewähr. Verbindlich ist der Preis an der Säule.</p></div>`;
 }
 
 function info(titel, werte) {
@@ -1015,6 +1053,11 @@ async function lade() {
     const antwort = await fetch(DATEN_URL, { cache: "no-cache" });
     if (!antwort.ok) throw new Error(antwort.status);
     const daten = await antwort.json();
+    // Preise sind optional: ohne die Datei bleibt die App wie vorher
+    try {
+      const pa = await fetch(PREISE_URL, { cache: "no-cache" });
+      if (pa.ok) preise = await pa.json();
+    } catch (e) { console.warn("Preise nicht geladen", e); }
     datenStand = daten.stand;
     alle = daten.standorte.map((st) => {
       bereite(st);
@@ -1029,7 +1072,7 @@ async function lade() {
     stecker = new Set(Array.isArray(gemerkt.stecker) ? gemerkt.stecker : []);
     baueSteckerKnoepfe();
     $("quelle").textContent =
-      `Datenstand ${datumText(daten.stand)}. Quelle: ${daten.quelle}. Angaben ohne Gewähr.`;
+      `Datenstand ${datumText(daten.stand)}. Quelle: ${daten.quelle}. Preise recherchiert ${preise.stand || "–"}. Angaben ohne Gewähr.`;
     karte.attributionControl.addAttribution(`Ladesäulen: Bundesnetzagentur.de (CC BY 4.0)`);
     // Nur wenn die Karte schon eine Größe hat. In einem versteckten Tab ist sie 0×0,
     // dann würde Leaflet auf die höchste Zoomstufe springen.
