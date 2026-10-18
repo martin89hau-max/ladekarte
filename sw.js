@@ -8,7 +8,7 @@
 //
 // Wenn du diese Datei änderst, VERSION hochzählen, damit Handys die neue Fassung holen.
 
-const VERSION = "v3";
+const VERSION = "v4";
 const HUELLE = `ladekarte-huelle-${VERSION}`;
 const DATEN = "ladekarte-daten";
 const KACHELN = "ladekarte-kacheln";
@@ -37,7 +37,7 @@ self.addEventListener("install", (ev) => {
     await Promise.all(FREMDE_DATEIEN.map((url) =>
       cache.add(new Request(url, { mode: "cors" })).catch(() => {})));
     // Ladesäulen gleich mitnehmen, damit die App schon nach dem ersten Besuch offline geht
-    await caches.open(DATEN).then((c) => c.addAll(["daten/standorte.json", "daten/preise.json"])).catch(() => {});
+    await caches.open(DATEN).then((c) => c.addAll(["daten/standorte.json", "daten/preise.json", "daten/tarife.json"])).catch(() => {});
     await self.skipWaiting();
   })());
 });
@@ -61,7 +61,7 @@ self.addEventListener("fetch", (ev) => {
     if (url.origin === location.origin && /\/(index\.html)?$/.test(url.pathname)) {
       ev.respondWith(erstNetz(req, HUELLE, "./"));
     }
-  } else if (url.origin === location.origin && /\/daten\/(standorte|preise)\.json$/.test(url.pathname)) {
+  } else if (url.origin === location.origin && /\/daten\/(standorte|preise|tarife)\.json$/.test(url.pathname)) {
     ev.respondWith(erstNetz(req, DATEN));
   } else if (url.hostname.endsWith("tile.openstreetmap.org")) {
     ev.respondWith(kachel(ev));
