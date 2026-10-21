@@ -671,6 +671,7 @@
 <div class="meldung" id="meldung" role="status" aria-live="polite"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" crossorigin="anonymous"></script>
+<script src="tarife.js"></script>
 <script>
 // ===================== Einstellungen =====================
 const DATEN_URL = "daten/standorte.json";
@@ -843,21 +844,12 @@ function zeichne() {
 // Kurzpreis für Schild und Liste: niedrigster ct-Wert aus dem Preistext, "~" wenn unsicher
 // Günstigster Preis, den ich mit meinen Karten (oder Ad-hoc) hier zahle
 function eigenerPreis(st) {
-  let best = null;
-  for (const b of st.betreiber) {
-    for (const t of tarifeNachBetreiber[b] || []) {
-      if (t.typ !== "adhoc" && !karten.has(t.name)) continue;
-      const v = st.dc ? t.dc : t.ac;
-      if (v == null) continue;
-      if (!best || v < best.v) best = { v, name: t.name, typ: t.typ, unsicher: t.sicherheit !== "gefunden" };
-    }
-  }
-  return best;
+  return LadeTarife.bester(st, Object.values(tarifeNachBetreiber).flat(), karten);
 }
 
 function kurzPreis(st) {
   const eigen = eigenerPreis(st);
-  if (eigen) return { text: `${eigen.unsicher ? "~" : ""}${String(eigen.v).replace(".", ",")} ct`, unsicher: eigen.unsicher, name: eigen.name };
+  if (Number.isFinite(eigen?.v)) return { text: `${eigen.unsicher ? "~" : ""}${String(eigen.v).replace(".", ",")} ct`, unsicher: eigen.unsicher, name: eigen.name };
   const p = preise.standorte[st.id];
   if (!p || p.status === "nicht gefunden" || !p.preis) return null;
   const zahlen = [...p.preis.matchAll(/(\d+(?:,\d+)?)\s*(?:–\s*\d+\s*)?ct/g)].map((m) => parseFloat(m[1].replace(",", ".")));
@@ -1181,8 +1173,9 @@ function preisBlock(st) {
   let h = `<div class="info"><h3>Preis (brutto), recherchiert ${esc(preise.stand || "")}</h3>`;
   const eigen = eigenerPreis(st);
   const alleTarife = st.betreiber.flatMap((b) => tarifeNachBetreiber[b] || [])
+    .filter((t) => LadeTarife.passt(t, st))
     .map((t) => ({ ...t, v: st.dc ? t.dc : t.ac })).filter((t) => t.v != null).sort((a, b) => a.v - b.v);
-  if (eigen) {
+  if (Number.isFinite(eigen?.v)) {
     h += `<p><strong>Für mich: ${String(eigen.v).replace(".", ",")} ct/kWh</strong> (${esc(eigen.name)})</p>`;
     h += alleTarife.map((t) => `<p class="preis-hinweis">${esc(t.name)}: ${String(t.v).replace(".", ",")} ct${t.grund ? `, ${String(t.grund).replace(".", ",")} €/Monat` : ""}${t.typ === "adhoc" || karten.has(t.name) ? "" : " (habe ich nicht)"}</p>`).join("");
     h += `<p class="preis-hinweis">Angaben des Betreibers:</p>`;
@@ -1307,7 +1300,7 @@ async function lade() {
     $("zaehler").textContent = "";
   }
 }
-lade();
+const datenBereit = lade();
 
 // ===================== Offline-Anzeige =====================
 function zeigeVerbindung() {

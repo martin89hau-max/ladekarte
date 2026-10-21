@@ -3,6 +3,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const test = require('node:test');
+const LadeTarife = require('../tarife.js');
+const tarife = JSON.parse(fs.readFileSync(path.join(__dirname, '../daten/tarife.json'), 'utf8')).tarife;
 
 test('Korsika: Datenfehler anzeigen, erneut laden und französische Stopps zuordnen', async () => {
   const elements = new Map();
@@ -20,14 +22,18 @@ test('Korsika: Datenfehler anzeigen, erneut laden und französische Stopps zuord
   const errors = [];
   let franceRequests = 0;
   const fr = {
-    betreiber: ['Corse Energie'], orte: ['Corse Nord', 'Corse Sud'],
+    betreiber: ['NW IECharge'], orte: ['Corse Nord', 'Corse Sud'],
     standorte: [[42.5, 9.45, 150, 1, 0, 2, 'FR1', 0], [42.0, 9.45, 150, 1, 0, 2, 'FR2', 1]],
   };
+  const regionaleEntfernung = (a, b) => a.lat - b.lat;
   const context = {
+    entfernungKm: regionaleEntfernung,
+    datenBereit: Promise.resolve(),
+    LadeTarife,
     document: {}, karte: { fitBounds() {} }, $: element,
     L: { layerGroup: layer, polyline: layer, marker: layer, divIcon: () => ({}) },
     localStorage: { getItem: () => JSON.stringify({ akku: 20 }), setItem() {} },
-    ausgeblendet: new Set(), eigenerPreis: () => null, esc: String,
+    ausgeblendet: new Set(), eigenerPreis: (st) => LadeTarife.bester(st, tarife), esc: String,
     ich: null, amRechner: { matches: false }, routeLink: () => '#',
     melde: (message) => errors.push(message),
     console: { warn() {}, error: (error) => errors.push(error.message) },
@@ -49,6 +55,7 @@ test('Korsika: Datenfehler anzeigen, erneut laden und französische Stopps zuord
     },
   };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '..', 'planer.js'), 'utf8'), context);
+  assert.equal(context.entfernungKm, regionaleEntfernung, 'Planer darf die Entfernungsfunktion der Hauptkarte nicht überschreiben');
   const plan = element('planer-form').handlers.submit;
   await plan();
   assert.match(element('planer-ergebnis').innerHTML, /Frankreich konnten nicht geladen/);
@@ -56,7 +63,10 @@ test('Korsika: Datenfehler anzeigen, erneut laden und französische Stopps zuord
   await plan();
   const result = element('planer-ergebnis').innerHTML;
   assert.doesNotMatch(result, /Frankreich konnten nicht geladen/);
-  assert.match(result, /Corse Energie/);
+  assert.match(result, /NW IECharge/);
+  assert.match(result, /25 ct\/kWh/);
+  assert.match(result, /https:\/\/iecharge.io\/fr\/prix\//);
+  assert.match(result, /Geprüft am 2026-10-21/);
   assert.match(result, /Corse Nord/);
   assert.match(result, /Corse Sud/);
   assert.doesNotMatch(result, /Deutscher Betreiber/);
