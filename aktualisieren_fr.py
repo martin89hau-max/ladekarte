@@ -9,12 +9,13 @@ Quelle: "Base nationale des IRVE" auf transport.data.gouv.fr / data.gouv.fr
 Aufbau von fr.json wie bei de.json:
   "betreiber", "orte", "standorte": [[lat, lon, kwMax, dc, betreiber, ladepunkte, id, ort], ...]
 """
-import csv, datetime, io, json, os, re, sys, urllib.request
+import csv, datetime, io, json, math, os, re, sys, urllib.request
 
 ORDNER = os.path.dirname(os.path.abspath(__file__))
 ZIEL = os.path.join(ORDNER, "daten", "fr.json")
-# Die Adresse der Datei ändert sich mit jedem Stand; dieser Link führt zur jeweils neuesten.
-DOWNLOAD = "https://transport.data.gouv.fr/resources/81743/download"
+# Stabile Ressourcen-Adresse der validierten, deduplizierten PAN-Konsolidierung.
+# Die alte Ressource 81743 wird zum 31.12.2026 eingestellt.
+DOWNLOAD = "https://www.data.gouv.fr/api/1/datasets/r/4ca78c71-4ea4-475d-bd3a-d4aef88f7bf8"
 KOPF = {"User-Agent": "Mozilla/5.0 (privates Ladesaeulen-Kartenprojekt)"}
 
 csv.field_size_limit(10_000_000)
@@ -26,7 +27,8 @@ def wahr(x):
 
 def zahl(x):
     try:
-        return float(str(x).strip().replace(",", "."))
+        wert = float(str(x).strip().replace(",", "."))
+        return wert if math.isfinite(wert) else None
     except ValueError:
         return None
 
@@ -63,17 +65,16 @@ def verarbeite(text):
         "lat": spalte(kopf, "consolidated_latitude"),
         "lon": spalte(kopf, "consolidated_longitude"),
         "xy": spalte(kopf, "coordonneesxy"),
-        "ort": spalte(kopf, "consolidated_commune", "commune"),
-        "gratis": spalte(kopf, "gratuit"),
+        "ort": spalte(kopf, "consolidated_commune", "commune", "nom_station", "adresse_station"),
     }
-    if c["id"] is None or (c["lat"] is None and c["xy"] is None):
+    if c["id"] is None or (c["xy"] is None and (c["lat"] is None or c["lon"] is None)):
         raise SystemExit("Erwartete Spalten fehlen. Hat sich das Format der Datei geändert?")
     standorte = {}
     for z in leser:
         if len(z) <= max(i for i in c.values() if i is not None):
             continue
         lat, lon = koordinaten(z, c["lat"], c["lon"], c["xy"])
-        if lat is None or not (41 < lat < 52) or not (-6 < lon < 10):
+        if lat is None or lon is None or not (41 < lat < 52) or not (-6 < lon < 10):
             continue                                   # Frankreich einschließlich Korsika; Übersee lassen wir weg
         sid = z[c["id"]].strip() or f"{lat:.4f}_{lon:.4f}"
         kw = zahl(z[c["kw"]]) if c["kw"] is not None else 0
@@ -106,6 +107,8 @@ def main():
     datum = re.search(r"(\d{4}-?\d{2}-?\d{2})", os.path.basename(name))
     stand = datum.group(1) if datum else datetime.date.today().isoformat()
     st = verarbeite(text)
+    if not st:
+        raise SystemExit("Keine französischen Standorte gefunden; vorhandene Daten bleiben erhalten.")
     namen = sorted({s["betreiber"] for s in st.values() if s["betreiber"]})
     orte = sorted({s["ort"] for s in st.values() if s["ort"]})
     nr = {n: i for i, n in enumerate(namen)}

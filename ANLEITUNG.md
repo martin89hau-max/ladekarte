@@ -8,6 +8,8 @@ Eine Web-App, die alle öffentlichen Ladesäulen in den Landkreisen Haßberge un
 | --- | --- |
 | `index.html` | Die App selbst: Karte, Liste „In der Nähe“, Filter, Details zu jeder Säule |
 | `aktualisieren.py` | Lädt die Liste der Bundesnetzagentur, filtert auf deine Region und speichert `daten/standorte.json` |
+| `aktualisieren_fr.py` | Lädt französische IRVE-Ladestandorte und speichert `daten/fr.json` für den Streckenplaner |
+| `planer.js` | Plant Routen mit Ladestopps in Deutschland und Frankreich |
 | `.github/workflows/aktualisieren.yml` | Startet das Skript jeden Montag automatisch auf GitHub |
 | `manifest.webmanifest` | Name, Farben und Icons, damit sich die Seite als App installieren lässt |
 | `sw.js` | Service Worker: speichert App, Daten und angesehene Kartenausschnitte für unterwegs ohne Netz |
@@ -60,6 +62,14 @@ Unter Windows heißt der Befehl meist `python` statt `python3`. Dann im Browser 
 ## Was die Karte zeigt (und was noch nicht)
 
 Jedes Schild auf der Karte zeigt die höchste Ladeleistung an diesem Standort in kW. Blau heißt normales Laden (AC), gelb heißt Schnellladen (DC). Weit herausgezoomt werden die Schilder zu Punkten. Ein Tipp öffnet die Details mit Steckern, Bezahlarten, Öffnungszeiten und einem Knopf für die Route.
+
+## Strecken nach Frankreich
+
+Im Streckenplaner kannst du auch französische Ziele wie Paris, Lyon oder Straßburg eingeben. Die französischen Ladestandorte werden bei passenden Routen automatisch nachgeladen. Enthalten sind das französische Festland und Korsika; Überseegebiete sind nicht enthalten. Die regionale Hauptkarte bleibt auf Haßberge und Schweinfurt ausgerichtet.
+
+`daten/fr.json` stammt aus der validierten, deduplizierten [IRVE-Konsolidierung des französischen Point d’Accès National](https://www.data.gouv.fr/datasets/beta-bases-nationales-des-points-de-recharge-pour-vehicules-electriques-en-france-irve) (Licence Ouverte / Etalab). Der GitHub-Ablauf aktualisiert diese Datei jeden Montag. Lokal geht das mit `python3 aktualisieren_fr.py`; eine bereits geladene CSV kann als Dateiname übergeben werden. Stationsnamen dienen als Ortsangabe, falls die Quelle keine Gemeinde nennt. Die Daten enthalten keine Live-Belegung oder verifizierten französischen Ladetarife.
+
+Nach dem ersten Laden bleiben die Stationsdaten offline verfügbar. Ortssuche und Routenberechnung benötigen weiterhin Internet. Falls die französischen Daten fehlen, zeigt die App eine Fehlermeldung; beim nächsten Planungsversuch lädt sie erneut.
 
 ## Ohne Netz
 

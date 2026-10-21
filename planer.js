@@ -245,7 +245,7 @@ if (typeof module !== "undefined") {
 if (typeof document !== "undefined" && typeof karte !== "undefined") {
   const DE_URL = "daten/de.json";
   const FR_URL = "daten/fr.json";
-  let frStatus = "";   // "", "geladen" oder "fehlt"
+  let frStatus = "";   // "", "geladen" oder "fehlt"; Fehler erlauben einen erneuten Versuch
   const PLANER_SPEICHER = "ladekarte.planer";
   const AUTO_STANDARD = { akku: 60, verbrauch: 20, maxKw: 100, start: 80, reserve: 10, ziel: 80, minKw: 50, umweg: 3 };
 
@@ -295,25 +295,35 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     return deDaten;
   }
 
-  // Frankreich-Daten nur laden, wenn die Route in den Westen führt, und an die Deutschland-Daten anhängen
+  // Grober Ausschnitt von Frankreich einschließlich Elsass und Korsika.
+  // Angrenzende Länder dürfen mit erfasst werden, damit keine Frankreich-Route fehlt.
   async function ladeFrankreich(punkte) {
-    if (frStatus || !punkte.some((p) => p.lon < 8.3 && p.lat < 51.2)) return;
-    frStatus = "fehlt";
+    if (frStatus === "geladen") return;
+    frStatus = "";
+    if (!punkte.some((p) => p.lon > -6 && p.lon < 10 && p.lat > 41 && p.lat < 52)) return;
     try {
       $("planer-status").textContent = "Lade Ladestationen für Frankreich …";
       const a = await fetch(FR_URL);
-      if (!a.ok) return;
+      if (!a.ok) throw new Error("HTTP " + a.status);
       const fr = await a.json();
+      if (!Array.isArray(fr.betreiber) || !Array.isArray(fr.orte) || !fr.standorte?.length) {
+        throw new Error("Ungültige Stationsdaten");
+      }
       const bo = deDaten.betreiber.length, oo = deDaten.orte.length;
+      const standorte = fr.standorte.map((z) => {
+        const zeile = [...z];
+        zeile[4] = z[4] < 0 ? -1 : z[4] + bo;
+        zeile[7] = z[7] < 0 ? -1 : z[7] + oo;
+        return zeile;
+      });
       deDaten.betreiber = deDaten.betreiber.concat(fr.betreiber);
       deDaten.orte = deDaten.orte.concat(fr.orte);
-      for (const z of fr.standorte) {
-        z[4] = z[4] < 0 ? -1 : z[4] + bo;
-        z[7] = z[7] < 0 ? -1 : z[7] + oo;
-        deDaten.standorte.push(z);
-      }
+      deDaten.standorte = deDaten.standorte.concat(standorte);
       frStatus = "geladen";
-    } catch (e) { console.warn("Frankreich-Daten nicht geladen", e); }
+    } catch (e) {
+      console.warn("Frankreich-Daten nicht geladen", e);
+      frStatus = "fehlt";
+    }
   }
 
   async function finde(text) {
@@ -422,7 +432,9 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     const fahrMin = route.duration / 60;
     const km = route.distance / 1000;
     const via = R.via ? ` über ${esc(R.via.name)}` : "";
-    const kopf = `<p class="leise">${esc(von.name)} → ${esc(nach.name)}${via}: ${zahlText(km)} km, reine Fahrzeit ${zeitText(fahrMin)}.</p>`;
+    const hinweis = frStatus === "fehlt"
+      ? `<p class="warnung">Ladestationen für Frankreich konnten nicht geladen werden. Dieser Plan berücksichtigt nur Deutschland. Bitte vor einer Fahrt nach Frankreich erneut mit Internet planen.</p>` : "";
+    const kopf = `<p class="leise">${esc(von.name)} → ${esc(nach.name)}${via}: ${zahlText(km)} km, reine Fahrzeit ${zeitText(fahrMin)}.</p>` + hinweis;
     if (!varianten.length) {
       const l = groessteLuecke(km, kandidaten);
       const reichweite = (auto.akku * (auto.ziel - auto.reserve) / 100) / (auto.verbrauch / 100);
