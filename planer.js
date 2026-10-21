@@ -19,7 +19,7 @@ const PLAN = {
   ersatzPreisCt: 69,     // Annahme, wenn für den Betreiber kein Preis bekannt ist
 };
 
-function entfernungKm(lat1, lon1, lat2, lon2) {
+function planerEntfernungKm(lat1, lon1, lat2, lon2) {
   const dy = (lat1 - lat2) * 111.2;
   const dx = (lon1 - lon2) * 111.2 * Math.cos(((lat1 + lat2) / 2) * Math.PI / 180);
   return Math.hypot(dx, dy);
@@ -34,7 +34,7 @@ function zerlege(koordinaten, schrittKm = PLAN.schrittKm) {
   punkte.push({ lat: lat0, lon: lon0, s: 0 });
   for (let i = 1; i < koordinaten.length; i++) {
     const [lon1, lat1] = koordinaten[i];
-    const seg = entfernungKm(lat0, lon0, lat1, lon1);
+    const seg = planerEntfernungKm(lat0, lon0, lat1, lon1);
     while (seg > 0 && s + seg >= naechster + schrittKm) {
       naechster += schrittKm;
       const t = (naechster - s) / seg;
@@ -69,7 +69,7 @@ function entlangDerRoute(punkte, standorte, maxAbstandKm, filter) {
         if (!liste) continue;
         for (const i of liste) {
           const p = punkte[i];
-          const d = entfernungKm(zeile[0], zeile[1], p.lat, p.lon);
+          const d = planerEntfernungKm(zeile[0], zeile[1], p.lat, p.lon);
           if (d < bester) { bester = d; bestS = p.s; }
         }
       }
@@ -237,7 +237,7 @@ function alleVarianten(gesamtKm, kandidaten, auto) {
 }
 
 if (typeof module !== "undefined") {
-  module.exports = { PLAN, zerlege, entlangDerRoute, planen, bewerten, ladeStopp, alleVarianten, entfernungKm, groessteLuecke };
+  module.exports = { PLAN, zerlege, entlangDerRoute, planen, bewerten, ladeStopp, alleVarianten, entfernungKm: planerEntfernungKm, groessteLuecke };
 }
 
 // ===================== Oberfläche (nur im Browser) =====================
@@ -245,7 +245,7 @@ if (typeof module !== "undefined") {
 if (typeof document !== "undefined" && typeof karte !== "undefined") {
   const DE_URL = "daten/de.json";
   const FR_URL = "daten/fr.json";
-  let frStatus = "";   // "", "geladen" oder "fehlt"
+  let frStatus = "";   // "", "geladen" oder "fehlt"; Fehler erlauben einen erneuten Versuch
   const PLANER_SPEICHER = "ladekarte.planer";
   const AUTO_STANDARD = { akku: 60, verbrauch: 20, maxKw: 100, start: 80, reserve: 10, ziel: 80, minKw: 50, umweg: 3 };
 
@@ -295,25 +295,36 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     return deDaten;
   }
 
-  // Frankreich-Daten nur laden, wenn die Route in den Westen führt, und an die Deutschland-Daten anhängen
+  // Grober Ausschnitt von Frankreich einschließlich Elsass und Korsika.
+  // Angrenzende Länder dürfen mit erfasst werden, damit keine Frankreich-Route fehlt.
   async function ladeFrankreich(punkte) {
-    if (frStatus || !punkte.some((p) => p.lon < 8.3 && p.lat < 51.2)) return;
-    frStatus = "fehlt";
+    if (frStatus === "geladen") return;
+    frStatus = "";
+    if (!punkte.some((p) => p.lon > -6 && p.lon < 10 && p.lat > 41 && p.lat < 52)) return;
     try {
       $("planer-status").textContent = "Lade Ladestationen für Frankreich …";
       const a = await fetch(FR_URL);
-      if (!a.ok) return;
+      if (!a.ok) throw new Error("HTTP " + a.status);
       const fr = await a.json();
+      if (!Array.isArray(fr.betreiber) || !Array.isArray(fr.orte) || !fr.standorte?.length) {
+        throw new Error("Ungültige Stationsdaten");
+      }
       const bo = deDaten.betreiber.length, oo = deDaten.orte.length;
+      const standorte = fr.standorte.map((z) => {
+        const zeile = [...z];
+        zeile[4] = z[4] < 0 ? -1 : z[4] + bo;
+        zeile[7] = z[7] < 0 ? -1 : z[7] + oo;
+        zeile[8] = "FR";
+        return zeile;
+      });
       deDaten.betreiber = deDaten.betreiber.concat(fr.betreiber);
       deDaten.orte = deDaten.orte.concat(fr.orte);
-      for (const z of fr.standorte) {
-        z[4] = z[4] < 0 ? -1 : z[4] + bo;
-        z[7] = z[7] < 0 ? -1 : z[7] + oo;
-        deDaten.standorte.push(z);
-      }
+      deDaten.standorte = deDaten.standorte.concat(standorte);
       frStatus = "geladen";
-    } catch (e) { console.warn("Frankreich-Daten nicht geladen", e); }
+    } catch (e) {
+      console.warn("Frankreich-Daten nicht geladen", e);
+      frStatus = "fehlt";
+    }
   }
 
   async function finde(text) {
@@ -338,9 +349,9 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     return d.routes[0];
   }
 
-  function preisFuer(namen, dc) {
-    const e = eigenerPreis({ betreiber: namen, dc });
-    return e ? { ct: e.v, name: e.name, unsicher: e.unsicher } : null;
+  function preisFuer(namen, z) {
+    const e = eigenerPreis({ betreiber: namen, dc: true, land: z[8] || "DE", kwMax: z[2], station: deDaten.orte[z[7]] || "" });
+    return e ? { ...e, ct: Number.isFinite(e.v) ? e.v : null } : null;
   }
 
   function kandidatenFuer(punkte) {
@@ -355,7 +366,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
       const z = t.zeile;
       const namen = [].concat(z[4]).map((i) => deDaten.betreiber[i]).filter(Boolean);
       if (!namen.length) namen.push("Betreiber unbekannt");
-      const p = preisFuer(namen, true);
+      const p = preisFuer(namen, z);
       return { s: t.s, abstand: t.abstand, kw: z[2], ct: p ? p.ct : null, preis: p, zeile: z, namen };
     });
   }
@@ -378,12 +389,24 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
   }
 
   const ortVon = (k) => (k.zeile[7] >= 0 ? deDaten.orte[k.zeile[7]] : "Ladestopp");
-  const preisKurz = (k) => (k.preis ? `${zahlText(k.preis.ct)} ct${k.preis.unsicher ? "~" : ""}` : `≈${PLAN.ersatzPreisCt} ct?`);
+  const preisKurz = (k) => (k.preis?.ct != null ? LadeTarife.label(k.preis) : `≈${PLAN.ersatzPreisCt} ct/kWh geschätzt`);
+
+  function preisDetails(k) {
+    const p = k.preis;
+    if (!p) return "";
+    const quelle = /^https:\/\//.test(p.quelle || "")
+      ? `<a href="${esc(p.quelle)}" target="_blank" rel="noopener">Tarif beim Anbieter</a>` : "";
+    const rechnung = p.min != null ? `Für die Planung: ${zahlText(p.ct, 2)} ct/kWh (oberer Bereichswert). `
+      : p.ab ? "Mindestpreis als Rechenwert; der Stationspreis kann höher sein. " : "";
+    return `<details class="leise"><summary>${esc(p.name)} · Tarifdetails</summary><p>${esc(p.hinweis || "")}</p>` +
+      `<p>${rechnung}${p.grund ? `${zahlText(p.grund, 2)} €/Monat zusätzlich; nicht in den Fahrtkosten enthalten. ` : ""}` +
+      `${p.geprueft ? `Geprüft am ${esc(p.geprueft)}. ` : ""}${quelle}</p></details>`;
+  }
 
   function stoppText(s, k, n) {
-    const preis = k.preis ? `${zahlText(k.preis.ct)} ct (${esc(k.preis.name)})${k.preis.unsicher ? ", unsicher" : ""}` : `ca. ${PLAN.ersatzPreisCt} ct (geschätzt)`;
+    const preis = preisKurz(k);
     return `<b>${n + 1}. ${esc(ortVon(k))}</b><br>${esc(k.namen.join(" / "))}<br>${zahlText(k.kw)} kW · ${zahlText(k.abstand, 1)} km neben der Route<br>` +
-      `Laden ${zahlText(s.von)} → ${zahlText(s.bis)} %, ${zeitText(s.minuten)}, ca. ${zahlText(s.euro, 2)} €<br>Preis: ${preis}<br>` +
+      `Laden ${zahlText(s.von)} → ${zahlText(s.bis)} %, ${zeitText(s.minuten)}, ca. ${zahlText(s.euro, 2)} €<br>Preis: ${preis}${preisDetails(k)}<br>` +
       `<a href="${esc(routeLink({ lat: k.zeile[0], lon: k.zeile[1] }))}" target="_blank" rel="noopener">Hinfahren</a>`;
   }
 
@@ -422,7 +445,9 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     const fahrMin = route.duration / 60;
     const km = route.distance / 1000;
     const via = R.via ? ` über ${esc(R.via.name)}` : "";
-    const kopf = `<p class="leise">${esc(von.name)} → ${esc(nach.name)}${via}: ${zahlText(km)} km, reine Fahrzeit ${zeitText(fahrMin)}.</p>`;
+    const hinweis = frStatus === "fehlt"
+      ? `<p class="warnung">Ladestationen für Frankreich konnten nicht geladen werden. Dieser Plan berücksichtigt nur Deutschland. Bitte vor einer Fahrt nach Frankreich erneut mit Internet planen.</p>` : "";
+    const kopf = `<p class="leise">${esc(von.name)} → ${esc(nach.name)}${via}: ${zahlText(km)} km, reine Fahrzeit ${zeitText(fahrMin)}.</p>` + hinweis;
     if (!varianten.length) {
       const l = groessteLuecke(km, kandidaten);
       const reichweite = (auto.akku * (auto.ziel - auto.reserve) / 100) / (auto.verbrauch / 100);
@@ -436,10 +461,10 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     }
     $("planer-ergebnis").innerHTML = kopf + varianten.map((v, n) => {
       const gesamt = fahrMin + v.minuten;
-      const ersatz = v.stopps.some((s) => kandidaten[s.index].ct == null);
+      const ersatz = v.stopps.some((s) => kandidaten[s.index].ct == null || kandidaten[s.index].preis?.unsicher);
       const stops = v.stopps.map((s, i) => {
         const k = kandidaten[s.index];
-        return `<li><b>${i + 1}. ${esc(ortVon(k))}</b> · ${esc(k.namen[0])}<br><span class="leise">${zahlText(k.kw)} kW, Laden ${zahlText(s.von)}→${zahlText(s.bis)} %, ${zeitText(s.minuten)}, ${zahlText(s.euro, 2)} € (${preisKurz(k)})</span></li>`;
+        return `<li><b>${i + 1}. ${esc(ortVon(k))}</b> · ${esc(k.namen[0])}<br><span class="leise">${zahlText(k.kw)} kW, Laden ${zahlText(s.von)}→${zahlText(s.bis)} %, ${zeitText(s.minuten)}, ${zahlText(s.euro, 2)} € (${preisKurz(k)})</span>${preisDetails(k)}</li>`;
       }).join("");
       return `<article class="variante" data-variante="${n}">
         <h3>${esc(v.namen.join(" und "))}</h3>
@@ -448,7 +473,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
         <div class="knoepfe"><button type="button" class="knopf-leise" data-zeige="${n}">Auf der Karte zeigen</button>
         <button type="button" class="knopf-leise" data-bearbeiten="${n}">Bearbeiten</button></div>
       </article>`;
-    }).join("") + `<p class="leise">Schätzung mit gleichbleibendem Verbrauch und mittlerer Ladeleistung. Preise sind teils geschätzt (≈) oder unsicher (~). Verbindlich sind Anzeige an der Säule und Tarif des Anbieters.</p>`;
+    }).join("") + `<p class="leise">Kostenvergleich mit hinterlegten Tarifen, keine Live-Preise. Bei Preisbereichen wird der obere Wert verwendet; „ab“ bezeichnet einen Mindestpreis. Ohne Tarif: ≈${PLAN.ersatzPreisCt} ct/kWh. Monats-, Park- und Blockiergebühren sind nicht enthalten. App- und Abotarife gelten nur bei Auswahl unter „Meine Karten und Betreiber“ und mit dem angegebenen Zahlungsweg.</p>`;
     letzteRoute = R;
     R.gezeigt = varianten[0];
     zeichnePlan(route, varianten[0], kandidaten, von, nach, true);
@@ -496,7 +521,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     reihe.forEach((s, n) => {
       const k = kandidaten[s.index];
       const warn = s.warnungen.map((w) => `<br><span class="warnung">${esc(w)}</span>`).join("");
-      let zeile = `<li><b>${n + 1}. ${esc(ortVon(k))}</b> · ${esc(k.namen[0])}<br><span class="leise">km ${zahlText(k.s)}, ${zahlText(k.kw)} kW, Laden ${zahlText(s.von)}→${zahlText(s.bis)} %, ${zeitText(s.minuten)}, ${zahlText(s.euro, 2)} € (${preisKurz(k)})</span>${warn}
+      let zeile = `<li><b>${n + 1}. ${esc(ortVon(k))}</b> · ${esc(k.namen[0])}<br><span class="leise">km ${zahlText(k.s)}, ${zahlText(k.kw)} kW, Laden ${zahlText(s.von)}→${zahlText(s.bis)} %, ${zeitText(s.minuten)}, ${zahlText(s.euro, 2)} € (${preisKurz(k)})</span>${preisDetails(k)}${warn}
         <div class="knoepfe"><button type="button" class="textknopf" data-ersetzen="${n}">Ersetzen</button>
         <button type="button" class="textknopf" data-entfernen="${n}">Entfernen</button></div>`;
       if (edit.picker?.modus === "ersetzen" && edit.picker.pos === n) {
@@ -517,7 +542,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
           <button type="button" class="knopf-leise" data-zurueck="1">Zurück zu den Vorschlägen</button>
         </div>
       </article>
-      <p class="leise">Änderungen rechnen sofort neu. Geladen wird nur so viel, wie bis zum nächsten Halt nötig ist. Preise ≈ geschätzt, ~ unsicher.</p>`;
+      <p class="leise">Keine Live-Preise. Preisbereiche werden mit dem oberen Wert berechnet, „ab“ ist ein Mindestpreis, ≈ geschätzt und ~ unsicher. Monats-, Park- und Blockiergebühren sind nicht enthalten.</p>`;
     zeichnePlan(route, plan, kandidaten, von, nach, anpassen);
     aktualisiereLeiste();
   }
@@ -576,6 +601,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     knopf.disabled = true;
     $("planer-ergebnis").innerHTML = "";
     try {
+      await datenBereit;   // Tarife und gespeicherte Karten müssen vor dem Kostenvergleich vorliegen.
       $("planer-status").textContent = "Suche Orte …";
       const viaText = $("planer-via").value.trim();
       const [von, nach, via] = await Promise.all([
