@@ -365,6 +365,50 @@
     text-align: left; padding: 8px 10px; border: 1px solid var(--linie); border-radius: 8px;
     background: var(--flaeche); color: var(--tinte); cursor: pointer; font-size: .9375rem; min-height: 44px;
   }
+  .planer select {
+    display: block; width: 100%; box-sizing: border-box; margin-top: 4px; min-height: 44px; padding: 0 10px;
+    border: 1px solid var(--linie); border-radius: 8px; background: var(--flaeche); color: var(--tinte); font-size: 1rem;
+  }
+  .planer .haken { display: flex; align-items: center; gap: 10px; min-height: 40px; font-size: .9375rem; font-weight: 500; color: var(--tinte); }
+  .planer .haken input { flex: none; width: 22px; height: 22px; min-height: 0; margin: 0; }
+  .planer h4 { margin: 0 0 6px; font-size: .9375rem; }
+  .planer .stecker.scroll { max-height: 210px; overflow-y: auto; }
+  .optionen { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-top: 12px; }
+  .option {
+    display: grid; gap: 2px; align-content: start; min-height: 44px; padding: 10px 12px; text-align: left;
+    border: 1px solid var(--linie); border-radius: 12px; background: var(--grund); color: var(--tinte); cursor: pointer; font-size: .875rem;
+  }
+  .option b { font-size: .9375rem; }
+  .option span { font-variant-numeric: tabular-nums; }
+  .option small { color: var(--tinte-leise); }
+  .option[aria-pressed="true"] { border-color: var(--blau-akzent); box-shadow: inset 0 0 0 2px var(--blau-akzent); background: var(--flaeche); }
+  .variante h3 small { font-weight: 500; font-size: .8125rem; color: var(--tinte-leise); }
+  .zeitleiste { list-style: none; margin: 12px 0 4px; padding: 0; }
+  .zeitleiste > li { display: flex; gap: 10px; font-size: .9375rem; }
+  .zeitleiste > li > div { flex: 1; min-width: 0; padding: 2px 0 4px; }
+  .zl-marke {
+    flex: none; width: 26px; height: 26px; border-radius: 13px; display: flex; align-items: center; justify-content: center;
+    background: var(--blau-akzent); color: #fff; font: 700 .8125rem/1 var(--schrift-schild);
+  }
+  .zl-marke.zl-laden { background: var(--gelb); color: #14212E; }
+  .zeitleiste > li.zl-etappe {
+    flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-left: 12px; padding: 6px 0 6px 22px;
+    border-left: 2px dashed var(--linie); color: var(--tinte-leise); font-size: .8125rem;
+  }
+  .tipp { color: #1E7B3C; font-weight: 600; font-size: .8125rem; }
+  .kartenpreise { list-style: none; margin: 6px 0; padding: 0; display: grid; gap: 3px; }
+  .kartenpreise li { display: flex; justify-content: space-between; gap: 10px; font-size: .8125rem; }
+  .kartenpreise li.meins { font-weight: 700; color: var(--tinte); }
+  .kartenpreise small { font-weight: 400; color: var(--tinte-leise); }
+  .vergleich { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--flaeche); }
+  .vergleich ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .vergleich li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; font-size: .9375rem; }
+  .vergleich li > span { flex: 1 1 55%; }
+  .vergleich li b { font-variant-numeric: tabular-nums; }
+  .vergleich small { color: var(--tinte-leise); }
+  .vergleich .spart { color: #1E7B3C; font-weight: 600; }
+  @media (prefers-color-scheme: dark) { .tipp, .vergleich .spart { color: #7FD69B; } }
+  .planer .entlang { margin-top: 16px; }
   .planer-leiste {
     position: fixed; z-index: 1150; left: 12px; right: 12px; bottom: calc(76px + env(safe-area-inset-bottom, 0px));
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -569,17 +613,30 @@
     <button type="button" class="textknopf" id="planer-tausch" style="margin-top:8px">⇅ Start und Ziel tauschen</button>
     <label>Ziel<input type="text" id="planer-nach" autocomplete="off" enterkeyhint="go" placeholder="z. B. Hamburg oder Paris"></label>
     <label>Route über (optional)<input type="text" id="planer-via" autocomplete="off" enterkeyhint="go" placeholder="z. B. Frankfurt, wenn die Strecke anders laufen soll"></label>
+    <label>Abfahrt (leer = jetzt)<input type="time" id="planer-abfahrt"></label>
+    <details>
+      <summary>Meine Ladekarten<span id="planer-karten-anzahl"></span></summary>
+      <p class="leise">Der Preis hängt von Karte und Betreiber ab. Wähle deine Karten und Abos, dann rechnet der Planer mit deinem Preis. Ohne Auswahl gilt der Ad-hoc-Preis.</p>
+      <div class="stecker scroll" id="planer-karten" role="group" aria-label="Meine Ladekarten"></div>
+    </details>
+    <details>
+      <summary>Nicht laden bei<span id="planer-meiden-anzahl"></span></summary>
+      <div class="stecker" id="planer-meiden" role="group" aria-label="Nicht laden bei"></div>
+    </details>
     <details>
       <summary>Mein Auto und Einstellungen</summary>
+      <label>Fahrzeug<select id="planer-fahrzeug"></select></label>
       <div class="planer-felder" id="planer-felder"></div>
-      <p class="leise">Karten und ausgeblendete Betreiber aus „Meine Karten und Betreiber“ gelten auch hier. Gespeichert nur auf diesem Gerät.</p>
+      <label class="haken"><input type="checkbox" id="planer-schoen"> Schöne Strecke über Landstraßen mitberechnen</label>
+      <label class="haken"><input type="checkbox" id="planer-maut"> Strecke ohne Maut mitberechnen</label>
+      <p class="leise">Fahrzeugwerte sind Richtwerte. Ausgeblendete Betreiber aus der Liste gelten auch hier. Gespeichert nur auf diesem Gerät.</p>
     </details>
     <button type="submit" class="planer-los" id="planer-los">Planen</button>
   </form>
   <p class="leise" id="planer-status" aria-live="polite"></p>
   <div id="planer-ergebnis"></div>
   <button type="button" class="knopf-leise" id="planer-weg" style="margin-top:14px">Route von der Karte entfernen</button>
-  <p class="leise">Ladestationen: Bundesnetzagentur (Deutschland), Base nationale des IRVE (Frankreich, Licence Ouverte). Orte: Nominatim (OpenStreetMap), Strecke: OSRM-Demoserver. Beides ohne Gewähr.</p>
+  <p class="leise">Ladestationen: Bundesnetzagentur (Deutschland), Base nationale des IRVE (Frankreich, Licence Ouverte). Orte: Nominatim (OpenStreetMap). Strecken: OSRM-Demoserver (schnellste) und Valhalla der FOSSGIS (schönste, ohne Maut). Alles ohne Gewähr.</p>
 </section>
 
 <button type="button" class="planer-leiste" id="planer-leiste" hidden>
@@ -614,7 +671,7 @@
     <details class="meine" id="meine">
       <summary>Meine Karten und Betreiber</summary>
       <h3>Diese Karten und Abos habe ich</h3>
-      <div class="stecker" id="karten" role="group" aria-label="Meine Karten und Abos"></div>
+      <div class="stecker scroll" id="karten" role="group" aria-label="Meine Karten und Abos"></div>
       <h3>Diese Betreiber ausblenden</h3>
       <div class="stecker scroll" id="betreiber-aus" role="group" aria-label="Betreiber ausblenden"></div>
       <p class="leise">Gespeichert nur auf diesem Gerät. Ohne Auswahl gilt der Ad-hoc-Preis.</p>
@@ -841,11 +898,17 @@ function zeichne() {
   if (ansicht === "liste") zeichneListe();
 }
 
-// Kurzpreis für Schild und Liste: niedrigster ct-Wert aus dem Preistext, "~" wenn unsicher
+// Alle Tarife als eine Liste: Ad-hoc, Karten und Abos, auch Roaming-Preise für alle Betreiber ("*")
+function alleTarife() {
+  return Object.values(tarifeNachBetreiber).flat();
+}
+
 // Günstigster Preis, den ich mit meinen Karten (oder Ad-hoc) hier zahle
 function eigenerPreis(st) {
-  return LadeTarife.bester(st, Object.values(tarifeNachBetreiber).flat(), karten);
+  return LadeTarife.bester(st, alleTarife(), karten);
 }
+
+// Kurzpreis für Schild und Liste: niedrigster ct-Wert aus dem Preistext, "~" wenn unsicher
 
 function kurzPreis(st) {
   const eigen = eigenerPreis(st);
@@ -983,7 +1046,7 @@ function kurzName(n) {
   return n.replace(/[\s-]+(GmbH|AG|SE|KG|eG|oHG|mbH)\b.*$/i, "").replace(/ (mobility\+|Germany|Deutschland|Dienstleistung|Immobilienverwaltungs|Marken-Discount).*$/, "").replace(/\s{2,}/g, " ");
 }
 function baueMeineKnoepfe() {
-  const wege = [...new Set(Object.values(tarifeNachBetreiber).flat().filter((t) => t.typ !== "adhoc").map((t) => t.name))].sort();
+  const wege = [...new Set(alleTarife().filter((t) => t.typ !== "adhoc").map((t) => t.name))].sort((a, b) => a.localeCompare(b, "de"));
   $("karten").innerHTML = wege.map((n) =>
     `<button type="button" aria-pressed="${karten.has(n)}" data-karte="${esc(n)}">${esc(n)}</button>`).join("");
   const zahl = new Map();
@@ -1002,6 +1065,7 @@ $("karten").addEventListener("click", (ev) => {
   aktualisiereMarker();
   zeichne();
   if (aktiv) oeffne(aktiv);
+  if (typeof planerKartenNeu === "function") planerKartenNeu();
 });
 $("betreiber-aus").addEventListener("click", (ev) => {
   const k = ev.target.closest("button[data-betreiber]");
@@ -1168,23 +1232,30 @@ function oeffne(eintrag) {
 
 function preisBlock(st) {
   const p = preise.standorte[st.id];
-  if (!p) return "";
-  const text = p.status === "nicht gefunden" ? "Preis nicht bekannt" : p.preis;
-  let h = `<div class="info"><h3>Preis (brutto), recherchiert ${esc(preise.stand || "")}</h3>`;
+  const optionen = LadeTarife.optionen(st, alleTarife());
+  if (!p && !optionen.length) return "";
+  let h = `<div class="info"><h3>Preis (brutto)${p ? `, recherchiert ${esc(preise.stand || "")}` : ""}</h3>`;
   const eigen = eigenerPreis(st);
-  const alleTarife = st.betreiber.flatMap((b) => tarifeNachBetreiber[b] || [])
-    .filter((t) => LadeTarife.passt(t, st))
-    .map((t) => ({ ...t, v: st.dc ? t.dc : t.ac })).filter((t) => t.v != null).sort((a, b) => a.v - b.v);
-  if (Number.isFinite(eigen?.v)) {
+  if (eigen && LadeTarife.hatPreis(eigen)) {
     h += `<p><strong>Für mich: ${String(eigen.v).replace(".", ",")} ct/kWh</strong> (${esc(eigen.name)})</p>`;
-    h += alleTarife.map((t) => `<p class="preis-hinweis">${esc(t.name)}: ${String(t.v).replace(".", ",")} ct${t.grund ? `, ${String(t.grund).replace(".", ",")} €/Monat` : ""}${t.typ === "adhoc" || karten.has(t.name) ? "" : " (habe ich nicht)"}</p>`).join("");
-    h += `<p class="preis-hinweis">Angaben des Betreibers:</p>`;
   }
-  h += `<p><strong>${esc(text)}</strong></p>`;
-  if (p.status === "teilweise / unsicher") h += `<p class="preis-hinweis">Unsicher oder nicht bestätigt</p>`;
-  if (p.status === "nicht gefunden") h += `<p class="preis-hinweis">Bitte an der Säule oder in der Lade-App prüfen.</p>`;
-  else if (p.hinweis) h += `<p class="preis-hinweis">${esc(p.hinweis)}</p>`;
-  if (p.link && p.status !== "nicht gefunden") h += `<p class="preis-hinweis"><a href="${esc(p.link)}" target="_blank" rel="noopener">Preisquelle</a></p>`;
+  // Je nach Karte und Betreiber ein anderer Preis: alle passenden Wege, günstigste zuerst
+  if (optionen.length) {
+    h += `<p class="preis-hinweis">Je nach Ladekarte:</p><ul class="kartenpreise">` + optionen.slice(0, 12).map((t) => {
+      const art = t.nutzbar === false ? "" : t.typ === "adhoc" ? "für alle" : karten.has(t.name) ? "habe ich"
+        : t.grund ? `${String(t.grund).replace(".", ",")} €/Monat` : "";
+      return `<li${eigen && t.name === eigen.name ? ' class="meins"' : ""}><span>${esc(t.name)}${art ? ` <small>${esc(art)}</small>` : ""}</span><b>${esc(LadeTarife.label(t))}</b></li>`;
+    }).join("") + `</ul>`;
+  }
+  if (p) {
+    const text = p.status === "nicht gefunden" ? "Preis nicht bekannt" : p.preis;
+    if (optionen.length) h += `<p class="preis-hinweis">Angaben des Betreibers:</p>`;
+    h += `<p><strong>${esc(text)}</strong></p>`;
+    if (p.status === "teilweise / unsicher") h += `<p class="preis-hinweis">Unsicher oder nicht bestätigt</p>`;
+    if (p.status === "nicht gefunden") h += `<p class="preis-hinweis">Bitte an der Säule oder in der Lade-App prüfen.</p>`;
+    else if (p.hinweis) h += `<p class="preis-hinweis">${esc(p.hinweis)}</p>`;
+    if (p.link && p.status !== "nicht gefunden") h += `<p class="preis-hinweis"><a href="${esc(p.link)}" target="_blank" rel="noopener">Preisquelle</a></p>`;
+  }
   return h + `<p class="preis-hinweis">Recherchiert im ${esc(preise.stand || "")}, ohne Gewähr. Verbindlich ist der Preis an der Säule.</p></div>`;
 }
 

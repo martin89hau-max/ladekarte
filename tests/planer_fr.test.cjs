@@ -12,12 +12,15 @@ test('Korsika: Datenfehler anzeigen, erneut laden und französische Stopps zuord
     if (!elements.has(id)) elements.set(id, {
       value: '', innerHTML: '', textContent: '', handlers: {},
       addEventListener(type, callback) { this.handlers[type] = callback; },
-      classList: { contains: () => true },
+      classList: { contains: () => true, add() {}, remove() {}, toggle: () => true },
+      setAttribute() {}, focus() {},
     });
     return elements.get(id);
   };
   element('planer-von').value = '43.0,9.45';
   element('planer-nach').value = '41.5,9.45';
+  element('planer-abfahrt').value = '08:00';   // feste Abfahrt, damit die Uhrzeiten gleich bleiben
+  let valhallaRequests = 0;
   const layer = () => ({ addTo() { return this; }, clearLayers() {}, bindPopup() {}, getBounds() { return []; } });
   const errors = [];
   let franceRequests = 0;
@@ -34,6 +37,7 @@ test('Korsika: Datenfehler anzeigen, erneut laden und französische Stopps zuord
     L: { layerGroup: layer, polyline: layer, marker: layer, divIcon: () => ({}) },
     localStorage: { getItem: () => JSON.stringify({ akku: 20 }), setItem() {} },
     ausgeblendet: new Set(), eigenerPreis: (st) => LadeTarife.bester(st, tarife), esc: String,
+    alleTarife: () => tarife, karten: new Set(),
     ich: null, amRechner: { matches: false }, routeLink: () => '#',
     melde: (message) => errors.push(message),
     console: { warn() {}, error: (error) => errors.push(error.message) },
@@ -47,6 +51,10 @@ test('Korsika: Datenfehler anzeigen, erneut laden und französische Stopps zuord
       if (url === 'daten/de.json') return { ok: true, json: async () => ({
         betreiber: ['Deutscher Betreiber'], orte: ['Deutscher Ort'], standorte: [],
       }) };
+      if (url.startsWith('https://valhalla1.openstreetmap.de/route?json=')) {
+        valhallaRequests++;
+        return { ok: false, status: 503 };            // Zusatzstrecken dürfen ausfallen
+      }
       assert.ok(url.startsWith('https://router.project-osrm.org/route/'));
       return { ok: true, json: async () => ({ routes: [{
         distance: 166800, duration: 10000,
