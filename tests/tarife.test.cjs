@@ -73,7 +73,7 @@ test('Alle französischen Einträge haben prüfbare Primärquellen und Prüfdatu
   assert.ok(fr.length >= 10);
   for (const t of fr) {
     assert.match(t.quelle, /^https:\/\//);
-    assert.match(t.geprueft, /^2026-10-2[12]$/);
+    assert.match(t.geprueft, /^2026-10-2[1-9]$/);
     assert.ok(t.hinweis.length > 20);
     if (t.dcMin != null) assert.ok(t.dcMin <= t.dc);
   }

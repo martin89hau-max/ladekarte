@@ -63,6 +63,22 @@ Unter Windows heißt der Befehl meist `python` statt `python3`. Dann im Browser 
 
 Jedes Schild auf der Karte zeigt die höchste Ladeleistung an diesem Standort in kW. Blau heißt normales Laden (AC), gelb heißt Schnellladen (DC). Weit herausgezoomt werden die Schilder zu Punkten. Ein Tipp öffnet die Details mit Steckern, Bezahlarten, Öffnungszeiten und einem Knopf für die Route.
 
+## Streckenplaner: Varianten, Zeitleiste und Ladekarten
+
+Der Knopf „Route“ plant Strecken mit Ladestopps in Deutschland und Frankreich.
+
+- **Varianten:** am schnellsten, am günstigsten, ausgewogen, dazu „Am schönsten“ (Landstraßen, wenig Autobahn) und „Ohne Maut“. Die beiden Zusatzstrecken lassen sich unter „Mein Auto und Einstellungen“ abschalten. Fällt der Server dafür aus, erscheint ein Hinweis und die übrigen Varianten bleiben.
+- **Zeitleiste:** je Etappe Kilometer und Fahrzeit, je Stopp Ankunft, Ladestand, Ladedauer und Weiterfahrt. Die Ladezeit folgt einer einfachen Kurve (volle Leistung bis 50 %, danach langsamer). Die Abfahrtszeit lässt sich eintragen, sonst gilt „jetzt“.
+- **Mein Auto:** Fahrzeugliste mit Richtwerten für Akku, Ladeleistung und Verbrauch (Škoda, VW, Tesla und weitere). Eigene Werte gehen weiterhin.
+- **Nicht laden bei:** Marken wie Tesla lassen sich abwählen, in Deutschland und Frankreich.
+- **Meine Ladekarten:** Der Preis hängt von Karte und Betreiber ab. Wer Karten und Abos wählt, bekommt seinen Preis. Ohne Auswahl gilt der Ad-hoc-Preis.
+- **Welche Ladekarte lohnt sich?** Unter jeder Variante steht, was dieselben Stopps mit anderen Karten kosten und wie viel das spart. Grundgebühren sind nicht eingerechnet.
+- **Alle Ladestationen an der Strecke:** aufklappbar, mit Sortierung nach Strecke, Preis und Leistung. Antippen plant die Station als Ladestopp ein.
+
+### Preise je Ladekarte pflegen (`daten/tarife.json`)
+
+Jeder Eintrag gehört zu einer Karte (`name`) und einem Betreiber (`betreiber`). Mit `betreiber: "*"` gilt er als Standardpreis der Karte an allen übrigen Säulen im Land. `ausserBetreiber` nimmt Betreiber davon aus. Ein eigener Eintrag derselben Karte für einen Betreiber geht vor. `nutzbar: false` heißt, die Karte funktioniert dort nicht. `jeVorgang` ist eine feste Gebühr je Ladevorgang. `ab: true` bezeichnet einen Mindestpreis. Jeder Eintrag braucht Quelle, Prüfdatum und einen Hinweis. Das sind keine Live-Preise. Viele Preise (zum Beispiel Škoda Powerpass) stehen nur in der Hersteller-App und sind als „unsicher“ gekennzeichnet.
+
 ## Strecken nach Frankreich
 
 Im Streckenplaner kannst du auch französische Ziele wie Paris, Lyon oder Straßburg eingeben. Die französischen Ladestandorte werden bei passenden Routen automatisch nachgeladen. Enthalten sind das französische Festland und Korsika; Überseegebiete sind nicht enthalten. Die regionale Hauptkarte bleibt auf Haßberge und Schweinfurt ausgerichtet.
