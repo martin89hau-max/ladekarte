@@ -468,7 +468,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
   const zeichenflaeche = L.canvas ? L.canvas({ padding: 0.3 }) : undefined;
   let letzteRoute = null;
   let edit = null;       // {strecke, indices, picker, sort, plan}
-  let entlangSort = "km", entlangMax = 40;
+  let entlangSort = "km", entlangMax = 40, entlangOffen = false;
 
   try { Object.assign(auto, JSON.parse(localStorage.getItem(PLANER_SPEICHER)) || {}); } catch {}
   if (!Array.isArray(auto.meiden)) auto.meiden = [];
@@ -950,7 +950,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
   // Alle Ladestationen an der Strecke, aufklappbar
   function entlangHtml(R) {
     const st = R.strecken[(edit?.plan || R.varianten[R.gewaehlt]).strecke];
-    return `<details class="entlang" id="planer-entlang"><summary>Alle Ladestationen an dieser Strecke (${st.kandidaten.length})</summary><div id="planer-entlang-liste"></div></details>`;
+    return `<details class="entlang" id="planer-entlang"${entlangOffen ? " open" : ""}><summary>Alle Ladestationen an dieser Strecke (${st.kandidaten.length})</summary><div id="planer-entlang-liste"></div></details>`;
   }
   function kandidatZeile(k, i, attr) {
     const meine = meineKarten();
@@ -1000,6 +1000,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
       (R.varianten.length > 1 ? `<div class="optionen" role="group" aria-label="Varianten">${R.varianten.map((x, n) => optionKnopf(R, x, n)).join("")}</div>` : "") +
       varianteHtml(R, v, false) + entlangHtml(R) + FUSSNOTE;
     zeichnePlan(R, v, true);
+    entlangWiederherstellen();
     aktualisiereLeiste();
   }
 
@@ -1028,7 +1029,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     $("planer-ergebnis").innerHTML = kopfHtml(R) + varianteHtml(R, edit.plan, true) + entlangHtml(R) +
       `<p class="leise">Keine Live-Preise. Preisbereiche werden mit dem oberen Wert berechnet, „ab“ ist ein Mindestpreis, ≈ geschätzt und ~ unsicher. Monats-, Park- und Blockiergebühren sind nicht enthalten.</p>`;
     zeichnePlan(R, edit.plan, anpassen);
-    if (entlangEbene.getLayers?.().length) zeichneEntlang(R);
+    entlangWiederherstellen();
     aktualisiereLeiste();
   }
 
@@ -1116,7 +1117,8 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
   // Liste "Alle Ladestationen an dieser Strecke": erst beim Aufklappen füllen, dann auch auf der Karte zeigen
   $("planer-ergebnis").addEventListener("toggle", (ev) => {
     if (ev.target?.id !== "planer-entlang" || !letzteRoute) return;
-    if (ev.target.open) {
+    entlangOffen = ev.target.open;
+    if (entlangOffen) {
       entlangMax = 40;
       fuelleEntlang();
       zeichneEntlang(letzteRoute);
@@ -1124,6 +1126,13 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
       entlangEbene.clearLayers();
     }
   }, true);
+
+  // Nach jedem Neuaufbau des Ergebnisses: war die Liste offen, wieder füllen und auf der Karte zeigen
+  function entlangWiederherstellen() {
+    if (!entlangOffen || !letzteRoute) return;
+    fuelleEntlang();
+    zeichneEntlang(letzteRoute);
+  }
 
   async function planeRoute(ev) {
     ev?.preventDefault();
