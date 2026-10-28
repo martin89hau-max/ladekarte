@@ -1,5 +1,5 @@
-# Holt jeden Montag automatisch die neue Liste der Bundesnetzagentur
-# und speichert daten/standorte.json, falls sich etwas geändert hat.
+# Holt jeden Montag die regionalen Daten der Bundesnetzagentur
+# und die französischen IRVE-Standorte für den Streckenplaner.
 name: Daten aktualisieren
 
 on:
@@ -19,11 +19,14 @@ jobs:
       - name: Ladesäulen laden und filtern
         run: python3 aktualisieren.py
 
+      - name: Ladestandorte in Frankreich laden
+        run: python3 aktualisieren_fr.py
+
       - name: Änderungen speichern
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add daten/standorte.json
+          git add daten/standorte.json daten/fr.json
           if git diff --cached --quiet; then
             echo "Keine Änderungen."
           else

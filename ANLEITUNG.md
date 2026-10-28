@@ -8,6 +8,8 @@ Eine Web-App, die alle öffentlichen Ladesäulen in den Landkreisen Haßberge un
 | --- | --- |
 | `index.html` | Die App selbst: Karte, Liste „In der Nähe“, Filter, Details zu jeder Säule |
 | `aktualisieren.py` | Lädt die Liste der Bundesnetzagentur, filtert auf deine Region und speichert `daten/standorte.json` |
+| `aktualisieren_fr.py` | Lädt französische IRVE-Ladestandorte und speichert `daten/fr.json` für den Streckenplaner |
+| `planer.js` | Plant Routen mit Ladestopps in Deutschland und Frankreich |
 | `.github/workflows/aktualisieren.yml` | Startet das Skript jeden Montag automatisch auf GitHub |
 | `manifest.webmanifest` | Name, Farben und Icons, damit sich die Seite als App installieren lässt |
 | `sw.js` | Service Worker: speichert App, Daten und angesehene Kartenausschnitte für unterwegs ohne Netz |
@@ -60,6 +62,46 @@ Unter Windows heißt der Befehl meist `python` statt `python3`. Dann im Browser 
 ## Was die Karte zeigt (und was noch nicht)
 
 Jedes Schild auf der Karte zeigt die höchste Ladeleistung an diesem Standort in kW. Blau heißt normales Laden (AC), gelb heißt Schnellladen (DC). Weit herausgezoomt werden die Schilder zu Punkten. Ein Tipp öffnet die Details mit Steckern, Bezahlarten, Öffnungszeiten und einem Knopf für die Route.
+
+## Streckenplaner: Varianten, Zeitleiste und Ladekarten
+
+Der Knopf „Route“ plant Strecken mit Ladestopps in Deutschland und Frankreich.
+
+- **Varianten:** am schnellsten, am günstigsten, ausgewogen, dazu „Am schönsten“ (Landstraßen, wenig Autobahn) und „Ohne Maut“. Die beiden Zusatzstrecken lassen sich unter „Mein Auto und Einstellungen“ abschalten. Fällt der Server dafür aus, erscheint ein Hinweis und die übrigen Varianten bleiben.
+- **Zeitleiste:** je Etappe Kilometer und Fahrzeit, je Stopp Ankunft, Ladestand, Ladedauer und Weiterfahrt. Die Ladezeit folgt einer einfachen Kurve (volle Leistung bis 50 %, danach langsamer). Die Abfahrtszeit lässt sich eintragen, sonst gilt „jetzt“.
+- **Mein Auto:** Fahrzeugliste mit Richtwerten für Akku, Ladeleistung und Verbrauch (Škoda, VW, Tesla und weitere). Eigene Werte gehen weiterhin.
+- **Nicht laden bei:** Marken wie Tesla lassen sich abwählen, in Deutschland und Frankreich.
+- **Meine Ladekarten:** Der Preis hängt von Karte und Betreiber ab. Wer Karten und Abos wählt, bekommt seinen Preis. Ohne Auswahl gilt der Ad-hoc-Preis.
+- **Welche Ladekarte lohnt sich?** Unter jeder Variante steht, was dieselben Stopps mit anderen Karten kosten und wie viel das spart. Grundgebühren sind nicht eingerechnet.
+- **Alle Ladestationen an der Strecke:** aufklappbar, mit Sortierung nach Strecke, Preis und Leistung. Antippen plant die Station als Ladestopp ein.
+
+### Preise je Ladekarte pflegen (`daten/tarife.json`)
+
+Jeder Eintrag gehört zu einer Karte (`name`) und einem Betreiber (`betreiber`). Mit `betreiber: "*"` gilt er als Standardpreis der Karte an allen übrigen Säulen im Land. `ausserBetreiber` nimmt Betreiber davon aus. Ein eigener Eintrag derselben Karte für einen Betreiber geht vor. `nutzbar: false` heißt, die Karte funktioniert dort nicht. `jeVorgang` ist eine feste Gebühr je Ladevorgang. `ab: true` bezeichnet einen Mindestpreis. Jeder Eintrag braucht Quelle, Prüfdatum und einen Hinweis. Das sind keine Live-Preise. Viele Preise (zum Beispiel Škoda Powerpass) stehen nur in der Hersteller-App und sind als „unsicher“ gekennzeichnet.
+
+## Strecken nach Frankreich
+
+Im Streckenplaner kannst du auch französische Ziele wie Paris, Lyon oder Straßburg eingeben. Die französischen Ladestandorte werden bei passenden Routen automatisch nachgeladen. Enthalten sind das französische Festland und Korsika; Überseegebiete sind nicht enthalten. Die regionale Hauptkarte bleibt auf Haßberge und Schweinfurt ausgerichtet.
+
+`daten/fr.json` stammt aus der validierten, deduplizierten [IRVE-Konsolidierung des französischen Point d’Accès National](https://www.data.gouv.fr/datasets/beta-bases-nationales-des-points-de-recharge-pour-vehicules-electriques-en-france-irve) (Licence Ouverte / Etalab). Der GitHub-Ablauf aktualisiert diese Datei jeden Montag. Lokal geht das mit `python3 aktualisieren_fr.py`; eine bereits geladene CSV kann als Dateiname übergeben werden. Stationsnamen dienen als Ortsangabe, falls die Quelle keine Gemeinde nennt. Die Daten enthalten keine Live-Belegung.
+
+### Französische Preise
+
+`daten/tarife.json` enthält separat mit `land: "FR"` gekennzeichnete, am **21.10.2026** auf Anbieter-Websites geprüfte Tarife. `tarife.js` ordnet sie nach Land, Betreiber, Zahlungsweg und gegebenenfalls Stationsname/Leistung zu. Deutsche Tarife gelten nicht für französische Standorte. Die Quellen, Bedingungen und das Prüfdatum findest du bei den Ladestopps unter **Tarifdetails**.
+
+- **IECharge:** 25 ct/kWh bei direkter Zahlung ([Quelle](https://iecharge.io/fr/prix/)).
+- **Fastned:** 61 ct/kWh direkt; mit direkter Zahlung in der App 10 % Rabatt, rechnerisch 54,9 ct/kWh ([Quelle](https://www.fastnedcharging.com/fr/recharge/tarifs)). Die abgelaufene Gold-Grundgebührenaktion wurde nicht übernommen.
+- **Lidl Plus:** DC 29 und AC 18 ct/kWh laut [Mitteilung vom 16.09.2026](https://corporate.lidl.fr/press-release-content/bornes-electriques). Die separate [QR-/ChargePoint-Seite](https://www.lidl.fr/c/tarifs-bornes/s10027299) nennt weiter 39/29 ct; dieser Zahlungsweg ist deshalb als unsicher markiert.
+- **IONITY:** französische Mindestpreise Direct ab 55, App/Go ab 52 ct/kWh; tatsächliche Stationspreise können höher liegen ([Quelle](https://www.ionity.eu/fr/abonnements)). Unterschiedliche monatliche/jährliche Motion-/Power-Preise wurden nicht pauschal übernommen.
+- **Electra:** Bankkarte ab 64, App 39–61 ct/kWh; ausgewählte Essential-/Smart-Abos reduzieren den Bereich um 10/20 ct. Smart umfasst außerdem den französischen 49-ct-Partnertarif bei IONITY, Fastned und Atlante ([Tarife](https://www.go-electra.com/fr/price/), [Abos](https://www.go-electra.com/fr/electra-plus)).
+- **TotalEnergies:** bei erkannten RELAIS-Tankstellen bis 50 kW 52–55, darüber 62–65 ct/kWh, außerdem 59 ct an den sechs ausdrücklich benannten Sonderstandorten. Keine Übertragung auf kommunale Betreiberverträge ([Quelle](https://services.totalenergies.fr/particuliers/energies-vehicules/electrique-rechargeable/pourquoi-choisir-electrique-totalenergies)).
+- **IZIVIA FAST:** [Happy Hour ab 30 ct](https://izivia.com/installation-bornes-de-recharge/izivia-bornes-recharge-ultra-rapide-mcdonalds-france) ist nur ein Hinweis; ohne bestätigten regulären Preis und Zeitfenster bleibt der Rechenwert geschätzt.
+
+App- und Abotarife gelten erst nach Auswahl unter **Meine Karten und Betreiber**. Danach erneut planen. Abos werden nicht automatisch abgeschlossen. Bei Preisbereichen rechnet der Planer mit dem oberen Wert, bei „ab“-Preisen mit dem ausdrücklich gekennzeichneten Mindestwert. Monats-, Park- und Blockiergebühren sind nicht in den Fahrtkosten enthalten. Tarifdetails nennen bekannte Zusatzgebühren. Unbekannte Preise bleiben mit 69 ct/kWh als Schätzung markiert; „Günstigste“ vergleicht deshalb hinterlegte Rechenwerte, keine Live-Angebote.
+
+Preise werden **nicht** vom wöchentlichen Stationsimport aktualisiert. Bei Änderungen die Anbieterquelle erneut prüfen und Preis, Bedingungen sowie `geprueft` anpassen. Tests: `node --test tests/*.test.cjs` und `python3 -m unittest discover -s tests -v`.
+
+Nach dem ersten Laden bleiben die Stationsdaten offline verfügbar. Ortssuche und Routenberechnung benötigen weiterhin Internet. Falls die französischen Daten fehlen, zeigt die App eine Fehlermeldung; beim nächsten Planungsversuch lädt sie erneut.
 
 ## Ohne Netz
 
