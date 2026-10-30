@@ -435,7 +435,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
   let frStatus = "";   // "", "geladen" oder "fehlt"; Fehler erlauben einen erneuten Versuch
   const PLANER_SPEICHER = "ladekarte.planer";
   const AUTO_STANDARD = { akku: 60, verbrauch: 20, maxKw: 100, start: 80, reserve: 10, ziel: 80, minKw: 50, umweg: 3,
-    fahrzeug: "", meiden: [], schoen: true, maut: true };
+    fahrzeug: "", meiden: [], schoen: false, maut: true };
 
   // Richtwerte: nutzbarer Akku (kWh), höchste DC-Ladeleistung (kW), Verbrauch gemischt mit viel Autobahn (kWh/100 km)
   const FAHRZEUGE = [
@@ -457,7 +457,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
 
   // Zusätzliche Strecken neben der schnellsten (Valhalla, Server der FOSSGIS)
   const STRECKEN = [
-    { art: "schoen", titel: "Am schönsten", text: "über Landstraßen, wenig Autobahn", optionen: { use_highways: 0.3 }, an: () => auto.schoen !== false },
+    { art: "schoen", titel: "Am schönsten", text: "über Landstraßen, wenig Autobahn", optionen: { use_highways: 0.3 }, an: () => auto.schoen === true },
     { art: "maut", titel: "Ohne Maut", text: "meidet mautpflichtige Straßen", optionen: { use_tolls: 0 }, an: () => auto.maut !== false },
   ];
 
@@ -518,7 +518,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     speichern();
   });
 
-  $("planer-schoen").checked = auto.schoen !== false;
+  $("planer-schoen").checked = auto.schoen === true;
   $("planer-maut").checked = auto.maut !== false;
   for (const [id, feld] of [["planer-schoen", "schoen"], ["planer-maut", "maut"]]) {
     $(id).addEventListener("change", (ev) => { auto[feld] = ev.target.checked; speichern(); });
