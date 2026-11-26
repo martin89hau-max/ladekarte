@@ -466,6 +466,14 @@ if (typeof module !== "undefined") {
 // ===================== Oberfläche (nur im Browser) =====================
 
 if (typeof document !== "undefined" && typeof karte !== "undefined") {
+  // Sprache (sprache.js). Fehlt sie (z. B. in Tests), bleibt alles Deutsch.
+  const fuelle = (text, werte) => text.replace(/\{(\w+)\}/g, (g, k) => (werte && k in werte ? String(werte[k]) : g));
+  const t = typeof globalThis.t === "function" ? globalThis.t : fuelle;
+  const tn = typeof globalThis.tn === "function" ? globalThis.tn
+    : (n, einzahl, mehrzahl, werte) => fuelle(n === 1 ? einzahl : mehrzahl, { n, ...werte });
+  const SPR = typeof Sprache !== "undefined" ? Sprache : { code: "de", locale: "de-DE" };
+  const UNBEKANNT = "Betreiber unbekannt";   // interner Platzhalter, nur bei der Anzeige übersetzt
+  const nameAnz = (n) => (n === UNBEKANNT ? t(UNBEKANNT) : n);
   const DE_URL = "daten/de.json";
   const FR_URL = "daten/fr.json";
   const VALHALLA_URL = "https://valhalla1.openstreetmap.de/route";
@@ -494,8 +502,8 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
 
   // Zusätzliche Strecken neben der schnellsten (Valhalla, Server der FOSSGIS)
   const STRECKEN = [
-    { art: "schoen", titel: "Am schönsten", text: "über Landstraßen, wenig Autobahn", optionen: { use_highways: 0.3 }, an: () => auto.schoen !== false },
-    { art: "maut", titel: "Ohne Maut", text: "meidet mautpflichtige Straßen", optionen: { use_tolls: 0 }, an: () => auto.maut !== false },
+    { art: "schoen", titel: t("Am schönsten"), text: t("über Landstraßen, wenig Autobahn"), optionen: { use_highways: 0.3 }, an: () => auto.schoen !== false },
+    { art: "maut", titel: t("Ohne Maut"), text: t("meidet mautpflichtige Straßen"), optionen: { use_tolls: 0 }, an: () => auto.maut !== false },
   ];
 
   let deDaten = null;
@@ -516,20 +524,20 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
   const tarifListe = () => (typeof alleTarife === "function" ? alleTarife() : []);
 
   const felder = [
-    ["akku", "Akku (kWh)", 10, 200, 1],
-    ["verbrauch", "Verbrauch bei 120 km/h (kWh/100 km)", 8, 40, 0.5],
-    ["tempo", "Tempo auf der Autobahn (km/h)", 80, 200, 5],
-    ["maxKw", "Max. Ladeleistung (kW)", 11, 350, 1],
-    ["start", "Start-Ladestand (%)", 10, 100, 1],
-    ["reserve", "Reserve bei Ankunft (%)", 0, 40, 1],
-    ["ziel", "Laden bis höchstens (%)", 50, 100, 1],
-    ["minKw", "Säulen ab (kW)", 11, 350, 1],
-    ["umweg", "Max. Abstand zur Route (km)", 0.5, 15, 0.5],
+    ["akku", t("Akku (kWh)"), 10, 200, 1],
+    ["verbrauch", t("Verbrauch bei 120 km/h (kWh/100 km)"), 8, 40, 0.5],
+    ["tempo", t("Tempo auf der Autobahn (km/h)"), 80, 200, 5],
+    ["maxKw", t("Max. Ladeleistung (kW)"), 11, 350, 1],
+    ["start", t("Start-Ladestand (%)"), 10, 100, 1],
+    ["reserve", t("Reserve bei Ankunft (%)"), 0, 40, 1],
+    ["ziel", t("Laden bis höchstens (%)"), 50, 100, 1],
+    ["minKw", t("Säulen ab (kW)"), 11, 350, 1],
+    ["umweg", t("Max. Abstand zur Route (km)"), 0.5, 15, 0.5],
   ];
 
   function rendereFelder() {
-    $("planer-felder").innerHTML = felder.map(([k, t, mi, ma, st]) =>
-      `<label>${t}<input type="number" inputmode="decimal" data-feld="${k}" min="${mi}" max="${ma}" step="${st}" value="${auto[k]}"></label>`).join("");
+    $("planer-felder").innerHTML = felder.map(([k, titel, mi, ma, st]) =>
+      `<label>${titel}<input type="number" inputmode="decimal" data-feld="${k}" min="${mi}" max="${ma}" step="${st}" value="${auto[k]}"></label>`).join("");
   }
   rendereFelder();
   $("planer-felder").addEventListener("change", (ev) => {
@@ -547,7 +555,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     neuRechnen();
   });
 
-  $("planer-fahrzeug").innerHTML = `<option value="">Eigene Werte</option>` +
+  $("planer-fahrzeug").innerHTML = `<option value="">${t("Eigene Werte")}</option>` +
     FAHRZEUGE.map(([n, a, k, v]) => `<option value="${esc(n)}">${esc(n)} (${a} kWh, ${k} kW)</option>`).join("");
   $("planer-fahrzeug").value = auto.fahrzeug || "";
   $("planer-fahrzeug").addEventListener("change", (ev) => {
@@ -586,12 +594,12 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
   // "Meine Ladekarten": dieselbe Auswahl wie in der Liste
   function rendereKarten() {
     const k = meineKarten();
-    const namen = [...new Set(tarifListe().filter((t) => t.typ !== "adhoc").map((t) => t.name))]
-      .sort((a, b) => a.localeCompare(b, "de"));
+    const namen = [...new Set(tarifListe().filter((x) => x.typ !== "adhoc").map((x) => x.name))]
+      .sort((a, b) => a.localeCompare(b, SPR.code));
     $("planer-karten").innerHTML = namen.map((n) =>
       `<button type="button" aria-pressed="${k.has(n)}" data-karte="${esc(n)}">${esc(n)}</button>`).join("") ||
-      `<p class="leise">Tarife werden geladen …</p>`;
-    $("planer-karten-anzahl").textContent = k.size ? ` (${k.size} gewählt)` : "";
+      `<p class="leise">${t("Tarife werden geladen …")}</p>`;
+    $("planer-karten-anzahl").textContent = k.size ? tn(k.size, " ({n} gewählt)", " ({n} gewählt)") : "";
   }
   function kartenGeaendert() {
     if (typeof speichereEinstellungen === "function") speichereEinstellungen();
@@ -626,17 +634,17 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
   }
   function uhrzeit(R, min) {
     const d = new Date(R.abfahrt + min * 60000);
-    const t = d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+    const zeit = d.toLocaleTimeString(SPR.locale, { hour: "2-digit", minute: "2-digit" });
     const tag0 = new Date(R.abfahrt); tag0.setHours(0, 0, 0, 0);
     const tage = Math.floor((d.getTime() - tag0.getTime()) / 86400000);
-    return tage > 0 ? `${t} (+${tage} Tag)` : t;
+    return tage > 0 ? t("{zeit} (+{n} Tag)", { zeit, n: tage }) : zeit;
   }
 
   async function ladeDeDaten() {
     if (deDaten) return deDaten;
-    $("planer-status").textContent = "Lade Ladestationen für ganz Deutschland …";
+    $("planer-status").textContent = t("Lade Ladestationen für ganz Deutschland …");
     const a = await fetch(DE_URL);
-    if (!a.ok) throw new Error("Daten nicht geladen (" + a.status + ")");
+    if (!a.ok) throw new Error(t("Daten nicht geladen ({status})", { status: a.status }));
     deDaten = await a.json();
     return deDaten;
   }
@@ -648,7 +656,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     frStatus = "";
     if (!punkte.some((p) => p.lon > -6 && p.lon < 10 && p.lat > 41 && p.lat < 52)) return;
     try {
-      $("planer-status").textContent = "Lade Ladestationen für Frankreich …";
+      $("planer-status").textContent = t("Lade Ladestationen für Frankreich …");
       const a = await fetch(FR_URL);
       if (!a.ok) throw new Error("HTTP " + a.status);
       const fr = await a.json();
@@ -674,14 +682,14 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
   }
 
   async function finde(text) {
-    const t = text.trim();
-    if (!t) throw new Error("Bitte Start und Ziel eintragen.");
-    const m = t.match(/^(-?\d+[.,]\d+)\s*[,;]\s*(-?\d+[.,]\d+)$/);
-    if (m) return { lat: parseFloat(m[1].replace(",", ".")), lon: parseFloat(m[2].replace(",", ".")), name: t };
-    const a = await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=de,fr,at,ch,nl,be,lu,cz,pl,dk,it,es&accept-language=de&q=" + encodeURIComponent(t));
-    if (!a.ok) throw new Error("Ortssuche nicht erreichbar.");
+    const ort = text.trim();
+    if (!ort) throw new Error(t("Bitte Start und Ziel eintragen."));
+    const m = ort.match(/^(-?\d+[.,]\d+)\s*[,;]\s*(-?\d+[.,]\d+)$/);
+    if (m) return { lat: parseFloat(m[1].replace(",", ".")), lon: parseFloat(m[2].replace(",", ".")), name: ort };
+    const a = await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=de,fr,at,ch,nl,be,lu,cz,pl,dk,it,es&accept-language=" + SPR.code + "&q=" + encodeURIComponent(ort));
+    if (!a.ok) throw new Error(t("Ortssuche nicht erreichbar."));
     const l = await a.json();
-    if (!l.length) throw new Error(`„${t}“ nicht gefunden.`);
+    if (!l.length) throw new Error(t("„{ort}“ nicht gefunden.", { ort }));
     return { lat: parseFloat(l[0].lat), lon: parseFloat(l[0].lon), name: l[0].display_name.split(",").slice(0, 2).join(",") };
   }
 
@@ -690,9 +698,9 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     const punkte = wege.map((p) => `${p.lon},${p.lat}`).join(";");
     const url = `https://router.project-osrm.org/route/v1/driving/${punkte}?overview=full&geometries=geojson&annotations=distance,duration`;
     const a = await fetch(url);
-    if (!a.ok) throw new Error("Routenberechnung nicht erreichbar.");
+    if (!a.ok) throw new Error(t("Routenberechnung nicht erreichbar."));
     const d = await a.json();
-    if (!d.routes?.length) throw new Error("Keine Route gefunden.");
+    if (!d.routes?.length) throw new Error(t("Keine Route gefunden."));
     const r = d.routes[0];
     const abschnitte = (r.legs || []).flatMap((l) => (l.annotation?.distance || []).map((m, i) => [m, l.annotation.duration[i]]));
     return { geometry: r.geometry, distance: r.distance, duration: r.duration, abschnitte };
@@ -731,12 +739,12 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
       if (aus.size && b.length && b.every((x) => aus.has(x))) return false;
       return !meidet(b, m);
     };
-    return entlangDerRoute(punkte, deDaten.standorte, auto.umweg, filter).map((t) => {
-      const z = t.zeile;
+    return entlangDerRoute(punkte, deDaten.standorte, auto.umweg, filter).map((treffer) => {
+      const z = treffer.zeile;
       const namen = [].concat(z[4]).map((i) => deDaten.betreiber[i]).filter(Boolean);
-      if (!namen.length) namen.push("Betreiber unbekannt");
+      if (!namen.length) namen.push(UNBEKANNT);
       const p = eigenerPreis(stationVon(z, namen));
-      return { s: t.s, abstand: t.abstand, kw: z[2], ct: p && LT.hatPreis(p) ? p.v : null, jeVorgang: p?.jeVorgang || 0, preis: p, zeile: z, namen };
+      return { s: treffer.s, abstand: treffer.abstand, kw: z[2], ct: p && LT.hatPreis(p) ? p.v : null, jeVorgang: p?.jeVorgang || 0, preis: p, zeile: z, namen };
     });
   }
 
@@ -749,10 +757,10 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
   // Varianten für alle Strecken: auf der schnellsten drei Wertungen, auf den anderen die ausgewogene
   // Reisetempo: Fahrzeit und Verbrauch je Strecke neu (st.auto ist auto mit angepasstem Verbrauch)
   function tempoFuer(st) {
-    const t = tempoAnpassung(st.route.abschnitte, auto.tempo);
-    st.fahrzeit = fahrzeitProfil(t.abschnitte, st.route.duration / 60);
-    st.autobahnAnteil = t.autobahnAnteil;
-    st.auto = { ...auto, verbrauch: auto.verbrauch * t.faktor };
+    const tp = tempoAnpassung(st.route.abschnitte, auto.tempo);
+    st.fahrzeit = fahrzeitProfil(tp.abschnitte, st.route.duration / 60);
+    st.autobahnAnteil = tp.autobahnAnteil;
+    st.auto = { ...auto, verbrauch: auto.verbrauch * tp.faktor };
   }
 
   function berechne(R) {
@@ -782,27 +790,27 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
 
   // Knopf am Stopp: dieses Netz künftig meiden und neu planen
   function meidenKnopf(k) {
-    const namen = k.namen.filter((n) => n !== "Betreiber unbekannt");
+    const namen = k.namen.filter((n) => n !== UNBEKANNT);
     if (!namen.length) return "";
     const marken = [...new Set(namen.map(markeVon))].map(netzName);
     return `<button type="button" class="textknopf" data-meide-stopp="${encodeURIComponent(JSON.stringify(namen))}"
-      title="Wird unter „Nicht laden bei“ gespeichert und lässt sich dort wieder einschalten">Nicht mehr bei ${esc(marken.join(" / "))} laden</button>`;
+      title="${esc(t("Wird unter „Nicht laden bei“ gespeichert und lässt sich dort wieder einschalten"))}">${t("Nicht mehr bei {marke} laden", { marke: esc(marken.join(" / ")) })}</button>`;
   }
 
-  const ortVon = (k) => (k.zeile[7] >= 0 ? deDaten.orte[k.zeile[7]] : "Ladestopp");
-  const preisKurz = (k) => (k.ct != null ? LT.label(k.preis) : `≈${PLAN.ersatzPreisCt} ct/kWh geschätzt`);
+  const ortVon = (k) => (k.zeile[7] >= 0 ? deDaten.orte[k.zeile[7]] : t("Ladestopp"));
+  const preisKurz = (k) => (k.ct != null ? LT.label(k.preis) : t("≈{ct} ct/kWh geschätzt", { ct: PLAN.ersatzPreisCt }));
 
   function preisDetails(k) {
     const p = k.preis;
     if (!p) return "";
     const quelle = /^https:\/\//.test(p.quelle || "")
-      ? `<a href="${esc(p.quelle)}" target="_blank" rel="noopener">Tarif beim Anbieter</a>` : "";
-    const rechnung = p.min != null ? `Für die Planung: ${zahlText(p.v, 2)} ct/kWh (oberer Bereichswert). `
-      : p.ab ? "Mindestpreis als Rechenwert; der Stationspreis kann höher sein. " : "";
-    return `<details class="leise"><summary>${esc(p.name)} · Tarifdetails</summary><p>${esc(p.hinweis || "")}</p>` +
-      `<p>${rechnung}${p.grund ? `${zahlText(p.grund, 2)} €/Monat zusätzlich; nicht in den Fahrtkosten enthalten. ` : ""}` +
-      `${p.jeVorgang ? `${zahlText(p.jeVorgang, 2)} € je Ladevorgang, in den Kosten enthalten. ` : ""}` +
-      `${p.geprueft ? `Geprüft am ${esc(p.geprueft)}. ` : ""}${quelle}</p></details>`;
+      ? `<a href="${esc(p.quelle)}" target="_blank" rel="noopener">${t("Tarif beim Anbieter")}</a>` : "";
+    const rechnung = p.min != null ? t("Für die Planung: {preis} ct/kWh (oberer Bereichswert). ", { preis: zahlText(p.v, 2) })
+      : p.ab ? t("Mindestpreis als Rechenwert; der Stationspreis kann höher sein. ") : "";
+    return `<details class="leise"><summary>${t("{name} · Tarifdetails", { name: esc(p.name) })}</summary><p>${esc(p.hinweis || "")}</p>` +
+      `<p>${rechnung}${p.grund ? t("{preis} €/Monat zusätzlich; nicht in den Fahrtkosten enthalten. ", { preis: zahlText(p.grund, 2) }) : ""}` +
+      `${p.jeVorgang ? t("{preis} € je Ladevorgang, in den Kosten enthalten. ", { preis: zahlText(p.jeVorgang, 2) }) : ""}` +
+      `${p.geprueft ? t("Geprüft am {datum}. ", { datum: esc(p.geprueft) }) : ""}${quelle}</p></details>`;
   }
 
   // Preise aller Karten an der Säule, günstigste zuerst
@@ -811,10 +819,10 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     if (opt.length < 2) return "";
     const meine = meineKarten();
     const zeilen = opt.slice(0, 14).map((p) => {
-      const art = p.typ === "adhoc" ? "für alle" : meine.has(p.name) ? "habe ich" : p.grund ? `${zahlText(p.grund, 2)} €/Monat` : "";
+      const art = p.typ === "adhoc" ? t("für alle") : meine.has(p.name) ? t("habe ich") : p.grund ? t("{preis} €/Monat", { preis: zahlText(p.grund, 2) }) : "";
       return `<li${p === k.preis || p.name === k.preis?.name ? ' class="meins"' : ""}><span>${esc(p.name)}${art ? ` <small>${esc(art)}</small>` : ""}</span><b>${esc(LT.label(p))}</b></li>`;
     }).join("");
-    return `<details class="leise"><summary>Preise je Ladekarte (${opt.length})</summary><ul class="kartenpreise">${zeilen}</ul></details>`;
+    return `<details class="leise"><summary>${t("Preise je Ladekarte ({n})", { n: opt.length })}</summary><ul class="kartenpreise">${zeilen}</ul></details>`;
   }
 
   // Hinweis, wenn eine Karte, die ich nicht habe, hier deutlich günstiger ist
@@ -822,7 +830,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     const meine = meineKarten();
     const best = optionenFuer(k).find((p) => LT.hatPreis(p) && p.typ !== "adhoc" && !meine.has(p.name));
     if (!best || (k.ct != null && best.v > k.ct - 2)) return "";
-    return `<br><span class="tipp">Mit ${esc(best.name)}: ${esc(LT.label(best))}</span>`;
+    return `<br><span class="tipp">${t("Mit {name}: {preis}", { name: esc(best.name), preis: esc(LT.label(best)) })}</span>`;
   }
 
   // ---- Karte ----
@@ -834,7 +842,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
       L.polyline(andere.route.geometry.coordinates.map(([lo, la]) => [la, lo]), { color: "#7A8794", weight: 3, opacity: .6, dashArray: "6 8", interactive: false }).addTo(routeEbene);
     });
     const linie = L.polyline(st.route.geometry.coordinates.map(([lo, la]) => [la, lo]), { color: "#2E74B5", weight: 5, opacity: .85 }).addTo(routeEbene);
-    const punktIcon = (t) => L.divIcon({ className: "marker", html: `<span class="routenpunkt">${t}</span>`, iconSize: [0, 0] });
+    const punktIcon = (text) => L.divIcon({ className: "marker", html: `<span class="routenpunkt">${text}</span>`, iconSize: [0, 0] });
     L.marker([R.von.lat, R.von.lon], { icon: punktIcon("A") }).addTo(routeEbene);
     L.marker([R.nach.lat, R.nach.lon], { icon: punktIcon("B") }).addTo(routeEbene);
     const z = zeitplan(plan, st.kandidaten, st.gesamtKm, st.fahrzeit);
@@ -850,10 +858,10 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
   }
 
   function stoppPopup(R, k, s, n, halt) {
-    return `<b>${n + 1}. ${esc(ortVon(k))}</b><br>${esc(k.namen.join(" / "))}<br>${zahlText(k.kw)} kW · ${zahlText(k.abstand, 1)} km neben der Route<br>` +
-      `an ${uhrzeit(R, halt.an)} · ${zeitText(s.ladenMin)} laden ${zahlText(s.von)} → ${zahlText(s.bis)} %<br>` +
-      `ca. ${zahlText(s.euro, 2)} € · ${preisKurz(k)}${preisDetails(k)}<br>` +
-      `<a href="${esc(routeLink({ lat: k.zeile[0], lon: k.zeile[1] }))}" target="_blank" rel="noopener">Hinfahren</a>`;
+    return `<b>${n + 1}. ${esc(ortVon(k))}</b><br>${esc(k.namen.map(nameAnz).join(" / "))}<br>${t("{kw} kW · {km} km neben der Route", { kw: zahlText(k.kw), km: zahlText(k.abstand, 1) })}<br>` +
+      `${t("an {zeit} · {dauer} laden {von} → {bis} %", { zeit: uhrzeit(R, halt.an), dauer: zeitText(s.ladenMin), von: zahlText(s.von), bis: zahlText(s.bis) })}<br>` +
+      `${t("ca. {euro} €", { euro: zahlText(s.euro, 2) })} · ${preisKurz(k)}${preisDetails(k)}<br>` +
+      `<a href="${esc(routeLink({ lat: k.zeile[0], lon: k.zeile[1] }))}" target="_blank" rel="noopener">${t("Hinfahren")}</a>`;
   }
 
   // Alle Ladestationen der gezeigten Strecke als Punkte auf der Karte
@@ -865,8 +873,8 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
       L.circleMarker([k.zeile[0], k.zeile[1]], {
         renderer: zeichenflaeche, radius: k.kw >= 150 ? 6 : 4.5, weight: 1, color: "#fff",
         fillColor: k.kw >= 150 ? "#F2B200" : "#2E74B5", fillOpacity: .95,
-      }).bindPopup(() => `<b>${esc(ortVon(k))}</b><br>${esc(k.namen.join(" / "))}<br>${zahlText(k.kw)} kW · km ${zahlText(k.s)} · ${zahlText(k.abstand, 1)} km neben der Route<br>` +
-        `Für mich: ${preisKurz(k)}${besserMit(k)}<br><button type="button" class="textknopf" data-einplanen="${i}">Als Ladestopp einplanen</button>`)
+      }).bindPopup(() => `<b>${esc(ortVon(k))}</b><br>${esc(k.namen.map(nameAnz).join(" / "))}<br>${t("{kw} kW · km {s} · {km} km neben der Route", { kw: zahlText(k.kw), s: zahlText(k.s), km: zahlText(k.abstand, 1) })}<br>` +
+        `${t("Für mich: {preis}", { preis: preisKurz(k) })}${besserMit(k)}<br><button type="button" class="textknopf" data-einplanen="${i}">${t("Als Ladestopp einplanen")}</button>`)
         .addTo(entlangEbene);
     });
   }
@@ -887,7 +895,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
   // ---- Zusammenfassung und Leiste unten (wenn der Planer zu ist) ----
   const gesamtMin = (R, plan) => R.strecken[plan.strecke].route.duration / 60 + plan.minuten;
   function planTexte(R, plan) {
-    return `${zeitText(gesamtMin(R, plan))} · ${plan.stopps.length} Stopp${plan.stopps.length === 1 ? "" : "s"} · ca. ${zahlText(plan.euro, 2)} €`;
+    return `${zeitText(gesamtMin(R, plan))} · ${tn(plan.stopps.length, "{n} Stopp", "{n} Stopps")} · ${t("ca. {euro} €", { euro: zahlText(plan.euro, 2) })}`;
   }
   function aktualisiereLeiste() {
     const offen = $("planer").classList.contains("offen");
@@ -904,22 +912,22 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
   // ---- Ergebnis ----
   function kopfHtml(R) {
     const schnell = R.strecken[0];
-    const via = R.via ? ` über ${esc(R.via.name)}` : "";
-    let h = `<p class="leise">${esc(R.von.name)} → ${esc(R.nach.name)}${via}: ${zahlText(schnell.route.distance / 1000)} km, reine Fahrzeit ${zeitText(schnell.fahrzeit(1))}.</p>`;
-    if (schnell.auto && schnell.autobahnAnteil > 0) h += `<p class="leise">Mit ${zahlText(auto.tempo)} km/h auf der Autobahn (${zahlText(schnell.autobahnAnteil * 100)} % der Strecke): Verbrauch im Schnitt etwa ${zahlText(schnell.auto.verbrauch, 1)} kWh/100 km.</p>`;
-    if (frStatus === "fehlt") h += `<p class="warnung">Ladestationen für Frankreich konnten nicht geladen werden. Dieser Plan berücksichtigt nur Deutschland. Bitte vor einer Fahrt nach Frankreich erneut mit Internet planen.</p>`;
-    if (R.ausgefallen.length) h += `<p class="leise">${esc(R.ausgefallen.join(" und "))}: Strecke konnte gerade nicht berechnet werden.</p>`;
-    if (gemieden().size) h += `<p class="leise">Ohne ${esc([...gemieden()].join(", "))}.</p>`;
+    const via = R.via ? t(" über {via}", { via: esc(R.via.name) }) : "";
+    let h = `<p class="leise">${t("{von} → {nach}{via}: {km} km, reine Fahrzeit {zeit}.", { von: esc(R.von.name), nach: esc(R.nach.name), via, km: zahlText(schnell.route.distance / 1000), zeit: zeitText(schnell.fahrzeit(1)) })}</p>`;
+    if (schnell.auto && schnell.autobahnAnteil > 0) h += `<p class="leise">${t("Mit {tempo} km/h auf der Autobahn ({anteil} % der Strecke): Verbrauch im Schnitt etwa {verbrauch} kWh/100 km.", { tempo: zahlText(auto.tempo), anteil: zahlText(schnell.autobahnAnteil * 100), verbrauch: zahlText(schnell.auto.verbrauch, 1) })}</p>`;
+    if (frStatus === "fehlt") h += `<p class="warnung">${t("Ladestationen für Frankreich konnten nicht geladen werden. Dieser Plan berücksichtigt nur Deutschland. Bitte vor einer Fahrt nach Frankreich erneut mit Internet planen.")}</p>`;
+    if (R.ausgefallen.length) h += `<p class="leise">${t("{strecken}: Strecke konnte gerade nicht berechnet werden.", { strecken: esc(R.ausgefallen.join(t(" und "))) })}</p>`;
+    if (gemieden().size) h += `<p class="leise">${t("Ohne {liste}.", { liste: esc([...gemieden()].join(", ")) })}</p>`;
     return h;
   }
 
-  const FUSSNOTE = `<p class="leise">Kostenvergleich mit hinterlegten Tarifen, keine Live-Preise. Bei Preisbereichen wird der obere Wert verwendet; „ab“ bezeichnet einen Mindestpreis, ~ unsicher. Ohne Tarif: ≈${PLAN.ersatzPreisCt} ct/kWh. Monats-, Park- und Blockiergebühren sind nicht enthalten. Karten- und Abopreise gelten nur, wenn du die Karte unter „Meine Ladekarten“ wählst. Ladezeiten geschätzt: volle Leistung bis 50 %, danach abnehmend.</p>`;
+  const FUSSNOTE = `<p class="leise">${t("Kostenvergleich mit hinterlegten Tarifen, keine Live-Preise. Bei Preisbereichen wird der obere Wert verwendet; „ab“ bezeichnet einen Mindestpreis, ~ unsicher. Ohne Tarif: ≈{ct} ct/kWh. Monats-, Park- und Blockiergebühren sind nicht enthalten. Karten- und Abopreise gelten nur, wenn du die Karte unter „Meine Ladekarten“ wählst. Ladezeiten geschätzt: volle Leistung bis 50 %, danach abnehmend.", { ct: PLAN.ersatzPreisCt })}</p>`;
 
   function optionKnopf(R, v, n) {
     const st = R.strecken[v.strecke];
-    const zusatz = v.strecke ? st.text : v.stopps.length ? `${v.stopps.length} Stopp${v.stopps.length === 1 ? "" : "s"}` : "ohne Ladestopp";
+    const zusatz = v.strecke ? st.text : v.stopps.length ? tn(v.stopps.length, "{n} Stopp", "{n} Stopps") : t("ohne Ladestopp");
     return `<button type="button" class="option" data-option="${n}" aria-pressed="${n === R.gewaehlt}">
-      <b>${esc(v.namen.join(" · "))}</b><span>${zeitText(gesamtMin(R, v))}</span><span>ca. ${zahlText(v.euro, 2)} €</span><small>${esc(zusatz)}</small></button>`;
+      <b>${esc(v.namen.map((x) => t(x)).join(" · "))}</b><span>${zeitText(gesamtMin(R, v))}</span><span>${t("ca. {euro} €", { euro: zahlText(v.euro, 2) })}</span><small>${esc(zusatz)}</small></button>`;
   }
 
   // Zeitleiste und Kosten einer Variante; im Editor mit Knöpfen zum Ändern
@@ -939,27 +947,27 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
           const sNach = pos === v.stopps.length ? gesamtKm : kandidaten[v.stopps[pos].index].s;
           h += wahlListe(st, imAbschnitt(st, sVor, sNach));
         } else {
-          h += ` <button type="button" class="textknopf" data-hinzu="${pos}">+ Stopp hinzufügen</button>`;
+          h += ` <button type="button" class="textknopf" data-hinzu="${pos}">${t("+ Stopp hinzufügen")}</button>`;
         }
       }
       return h + `</li>`;
     };
 
-    let liste = `<li class="zl-punkt"><span class="zl-marke">A</span><div><b>${esc(R.von.name)}</b><br><span class="leise">Abfahrt ${uhrzeit(R, 0)} mit ${zahlText(auto.start)} %</span></div></li>`;
+    let liste = `<li class="zl-punkt"><span class="zl-marke">A</span><div><b>${esc(R.von.name)}</b><br><span class="leise">${t("Abfahrt {zeit} mit {prozent} %", { zeit: uhrzeit(R, 0), prozent: zahlText(auto.start) })}</span></div></li>`;
     v.stopps.forEach((s, n) => {
       const k = kandidaten[s.index];
       const halt = z.halte[n];
-      const warn = (s.warnungen || []).map((w) => `<br><span class="warnung">${esc(w)}</span>`).join("");
+      const warn = (s.warnungen || []).map((w) => `<br><span class="warnung">${esc(t(w))}</span>`).join("");
       liste += etappe(z.etappen[n], n);
       liste += `<li class="zl-stopp"><span class="zl-marke zl-laden">${n + 1}</span><div>
-        <b>${esc(ortVon(k))}</b> · ${esc(k.namen[0])}<br>
-        <span class="leise">${zahlText(k.kw)} kW${k.abstand >= 0.5 ? ` · ${zahlText(k.abstand, 1)} km neben der Route` : ""}${k.zeile[8] === "FR" ? " · Frankreich" : ""}</span><br>
-        an ${uhrzeit(R, halt.an)} mit ${zahlText(s.von)} % · <b>${zeitText(s.ladenMin)}</b> laden bis ${zahlText(s.bis)} % · weiter ${uhrzeit(R, halt.ab)}<br>
-        <strong>ca. ${zahlText(s.euro, 2)} €</strong> <span class="leise">· ${preisKurz(k)}${k.preis?.name && k.ct != null ? ` (${esc(k.preis.name)})` : ""}</span>${besserMit(k)}${warn}
+        <b>${esc(ortVon(k))}</b> · ${esc(nameAnz(k.namen[0]))}<br>
+        <span class="leise">${zahlText(k.kw)} kW${k.abstand >= 0.5 ? t(" · {km} km neben der Route", { km: zahlText(k.abstand, 1) }) : ""}${k.zeile[8] === "FR" ? t(" · Frankreich") : ""}</span><br>
+        ${t("an {an} mit {von} % · <b>{dauer}</b> laden bis {bis} % · weiter {ab}", { an: uhrzeit(R, halt.an), von: zahlText(s.von), dauer: zeitText(s.ladenMin), bis: zahlText(s.bis), ab: uhrzeit(R, halt.ab) })}<br>
+        <strong>${t("ca. {euro} €", { euro: zahlText(s.euro, 2) })}</strong> <span class="leise">· ${preisKurz(k)}${k.preis?.name && k.ct != null ? ` (${esc(k.preis.name)})` : ""}</span>${besserMit(k)}${warn}
         ${kartenHtml(k)}${preisDetails(k)}${meidenKnopf(k)}`;
       if (bearbeiten) {
-        liste += `<div class="knoepfe"><button type="button" class="textknopf" data-ersetzen="${n}">Ersetzen</button>
-          <button type="button" class="textknopf" data-entfernen="${n}">Entfernen</button></div>`;
+        liste += `<div class="knoepfe"><button type="button" class="textknopf" data-ersetzen="${n}">${t("Ersetzen")}</button>
+          <button type="button" class="textknopf" data-entfernen="${n}">${t("Entfernen")}</button></div>`;
         if (edit.picker?.modus === "ersetzen" && edit.picker.pos === n) {
           const nah = kandidaten.map((_, i) => i).filter((i) => Math.abs(kandidaten[i].s - k.s) <= 40 && i !== s.index && !edit.indices.includes(i));
           liste += wahlListe(st, nah);
@@ -968,18 +976,18 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
       liste += `</div></li>`;
     });
     liste += etappe(z.etappen[v.stopps.length], v.stopps.length);
-    liste += `<li class="zl-punkt"><span class="zl-marke">B</span><div><b>${esc(R.nach.name)}</b><br><span class="leise">Ankunft ${uhrzeit(R, z.ankunft)} mit ${zahlText(Math.max(0, v.zielProzent))} %</span></div></li>`;
+    liste += `<li class="zl-punkt"><span class="zl-marke">B</span><div><b>${esc(R.nach.name)}</b><br><span class="leise">${t("Ankunft {zeit} mit {prozent} %", { zeit: uhrzeit(R, z.ankunft), prozent: zahlText(Math.max(0, v.zielProzent)) })}</span></div></li>`;
 
-    const warnZiel = (v.warnungen || []).map((w) => `<p class="warnung">${esc(w)}</p>`).join("");
+    const warnZiel = (v.warnungen || []).map((w) => `<p class="warnung">${esc(t(w))}</p>`).join("");
     const knoepfe = bearbeiten
-      ? `<a class="knopf-leise" href="${esc(mapsLink(R, v))}" target="_blank" rel="noopener">In Karten-App öffnen</a>
-         <button type="button" class="knopf-leise" data-zurueck="1">Zurück zu den Vorschlägen</button>`
-      : `<button type="button" class="knopf-leise" data-zeige="1">Auf der Karte zeigen</button>
-         <button type="button" class="knopf-leise" data-bearbeiten="1">Bearbeiten</button>
-         <a class="knopf-leise" href="${esc(mapsLink(R, v))}" target="_blank" rel="noopener">In Karten-App öffnen</a>`;
+      ? `<a class="knopf-leise" href="${esc(mapsLink(R, v))}" target="_blank" rel="noopener">${t("In Karten-App öffnen")}</a>
+         <button type="button" class="knopf-leise" data-zurueck="1">${t("Zurück zu den Vorschlägen")}</button>`
+      : `<button type="button" class="knopf-leise" data-zeige="1">${t("Auf der Karte zeigen")}</button>
+         <button type="button" class="knopf-leise" data-bearbeiten="1">${t("Bearbeiten")}</button>
+         <a class="knopf-leise" href="${esc(mapsLink(R, v))}" target="_blank" rel="noopener">${t("In Karten-App öffnen")}</a>`;
     return `<article class="variante${bearbeiten ? " bearbeiten" : ""}">
-      <h3>${esc(bearbeiten ? "Meine Route" : v.namen.join(" und "))}${v.strecke ? ` <small>${esc(st.text)}</small>` : ""}</h3>
-      <p><strong>${zeitText(fahrMin + v.minuten)}</strong> gesamt (${zeitText(fahrMin)} fahren, ${zeitText(ladenMin)} laden) · ${zahlText(st.route.distance / 1000)} km · ca. <strong>${zahlText(v.euro, 2)} €</strong>${geschaetzt ? " (teils geschätzt)" : ""}</p>
+      <h3>${esc(bearbeiten ? t("Meine Route") : v.namen.map((x) => t(x)).join(t(" und ")))}${v.strecke ? ` <small>${esc(st.text)}</small>` : ""}</h3>
+      <p>${t("<strong>{gesamt}</strong> gesamt ({fahren} fahren, {laden} laden)", { gesamt: zeitText(fahrMin + v.minuten), fahren: zeitText(fahrMin), laden: zeitText(ladenMin) })} · ${zahlText(st.route.distance / 1000)} km · ${t("ca. <strong>{euro} €</strong>", { euro: zahlText(v.euro, 2) })}${geschaetzt ? t(" (teils geschätzt)") : ""}</p>
       ${warnZiel}
       <ol class="zeitleiste">${liste}</ol>
       ${vergleichHtml(R, v)}
@@ -995,28 +1003,28 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     const kv = kartenVergleich(v.stopps, st.kandidaten, optionenFuer, meine);
     const zeile = (titel, r, extra = "") =>
       `<li><span>${titel}</span><b>${zahlText(r.euro, 2)} €${r.geschaetzt ? "*" : ""}</b>${extra}</li>`;
-    let h = zeile("Ohne Karte (Ad-hoc)", kv.ohne);
-    if (meine.size) h += zeile("Mit meinen Karten", kv.mit);
+    let h = zeile(t("Ohne Karte (Ad-hoc)"), kv.ohne);
+    if (meine.size) h += zeile(t("Mit meinen Karten"), kv.mit);
     h += kv.vorschlaege.slice(0, 4).map((p) => zeile(
-      `+ ${esc(p.name)}${p.grund ? ` <small>${zahlText(p.grund, 2)} €/Monat</small>` : ""}`, p,
-      `<small class="spart">spart ${zahlText(p.ersparnis, 2)} €</small><button type="button" class="textknopf" data-karte-nehmen="${esc(p.name)}">Habe ich</button>`)).join("");
+      `+ ${esc(p.name)}${p.grund ? ` <small>${t("{preis} €/Monat", { preis: zahlText(p.grund, 2) })}</small>` : ""}`, p,
+      `<small class="spart">${t("spart {euro} €", { euro: zahlText(p.ersparnis, 2) })}</small><button type="button" class="textknopf" data-karte-nehmen="${esc(p.name)}">${t("Habe ich")}</button>`)).join("");
     const stern = [kv.ohne, kv.mit, ...kv.vorschlaege].some((r) => r.geschaetzt)
-      ? ` * enthält Stopps ohne bekannten Preis (≈${PLAN.ersatzPreisCt} ct/kWh).` : "";
-    return `<section class="vergleich"><h4>Welche Ladekarte lohnt sich auf dieser Strecke?</h4><ul>${h}</ul>
-      <p class="leise">Gleiche Ladestopps, je Säule der günstigste passende Preis. Grundgebühren sind nicht eingerechnet.${stern}</p></section>`;
+      ? t(" * enthält Stopps ohne bekannten Preis (≈{ct} ct/kWh).", { ct: PLAN.ersatzPreisCt }) : "";
+    return `<section class="vergleich"><h4>${t("Welche Ladekarte lohnt sich auf dieser Strecke?")}</h4><ul>${h}</ul>
+      <p class="leise">${t("Gleiche Ladestopps, je Säule der günstigste passende Preis. Grundgebühren sind nicht eingerechnet.")}${stern}</p></section>`;
   }
 
   // Alle Ladestationen an der Strecke, aufklappbar
   function entlangHtml(R) {
     const st = R.strecken[(edit?.plan || R.varianten[R.gewaehlt]).strecke];
-    return `<details class="entlang" id="planer-entlang"${entlangOffen ? " open" : ""}><summary>Alle Ladestationen an dieser Strecke (${st.kandidaten.length})</summary><div id="planer-entlang-liste"></div></details>`;
+    return `<details class="entlang" id="planer-entlang"${entlangOffen ? " open" : ""}><summary>${t("Alle Ladestationen an dieser Strecke ({n})", { n: st.kandidaten.length })}</summary><div id="planer-entlang-liste"></div></details>`;
   }
   function kandidatZeile(k, i, attr) {
     const meine = meineKarten();
     const best = optionenFuer(k).find((p) => LT.hatPreis(p));
     const guenstiger = best && best.typ !== "adhoc" && !meine.has(best.name) && (k.ct == null || best.v < k.ct)
-      ? ` · mit ${esc(best.name)} ${esc(LT.label(best))}` : "";
-    return `<button type="button" class="wahl" ${attr}="${i}"><b>${esc(ortVon(k))}</b> · ${esc(k.namen[0])}<br><span class="leise">km ${zahlText(k.s)}, ${zahlText(k.kw)} kW, ${preisKurz(k)}${guenstiger}, ${zahlText(k.abstand, 1)} km Abstand</span></button>`;
+      ? t(" · mit {name} {preis}", { name: esc(best.name), preis: esc(LT.label(best)) }) : "";
+    return `<button type="button" class="wahl" ${attr}="${i}"><b>${esc(ortVon(k))}</b> · ${esc(nameAnz(k.namen[0]))}<br><span class="leise">${t("km {s}, {kw} kW, {preis}{guenstiger}, {km} km Abstand", { s: zahlText(k.s), kw: zahlText(k.kw), preis: preisKurz(k), guenstiger, km: zahlText(k.abstand, 1) })}</span></button>`;
   }
   function fuelleEntlang() {
     const R = letzteRoute;
@@ -1029,9 +1037,9 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
       : entlangSort === "kw" ? (a, b) => st.kandidaten[b].kw - st.kandidaten[a].kw || st.kandidaten[a].s - st.kandidaten[b].s
       : (a, b) => st.kandidaten[a].s - st.kandidaten[b].s);
     const sortKnopf = (wert, text) => `<button type="button" class="textknopf" data-entlang-sort="${wert}" ${entlangSort === wert ? 'aria-current="true"' : ""}>${text}</button>`;
-    ziel.innerHTML = `<p class="leise">Sortiert nach ${sortKnopf("km", "Strecke")} · ${sortKnopf("preis", "Preis")} · ${sortKnopf("kw", "Leistung")}. Antippen plant die Station als Ladestopp ein.</p>
+    ziel.innerHTML = `<p class="leise">${t("Sortiert nach {a} · {b} · {c}. Antippen plant die Station als Ladestopp ein.", { a: sortKnopf("km", t("Strecke")), b: sortKnopf("preis", t("Preis")), c: sortKnopf("kw", t("Leistung")) })}</p>
       <div class="auswahl">${reihe.slice(0, entlangMax).map((i) => kandidatZeile(st.kandidaten[i], i, "data-einplanen")).join("")}</div>` +
-      (reihe.length > entlangMax ? `<button type="button" class="knopf-leise" data-entlang-mehr="1">Weitere ${Math.min(40, reihe.length - entlangMax)} anzeigen</button>` : "");
+      (reihe.length > entlangMax ? `<button type="button" class="knopf-leise" data-entlang-mehr="1">${t("Weitere {n} anzeigen", { n: Math.min(40, reihe.length - entlangMax) })}</button>` : "");
   }
 
   function zeigeErgebnis(R) {
@@ -1045,8 +1053,10 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
       const l = groessteLuecke(km, schnell.kandidaten);
       const reichweite = (auto.akku * (auto.ziel - auto.reserve) / 100) / ((schnell.auto || auto).verbrauch / 100);
       const grund = l.km > reichweite
-        ? `Zwischen Kilometer ${zahlText(l.ab)} und ${zahlText(l.ab + l.km)} gibt es keine passende Ladestation in den Daten (${frStatus === "geladen" ? "die Daten gelten für Deutschland und Frankreich" : "die Daten gelten nur für Deutschland"}), das ist mehr als die Reichweite von etwa ${zahlText(reichweite)} km zwischen zwei Halten.`
-        : `Mit diesen Einstellungen ist keine Route mit Ladestopps möglich. Probiere einen größeren Abstand zur Route, eine niedrigere Mindestleistung oder mehr Ladestand.`;
+        ? t("Zwischen Kilometer {a} und {b} gibt es keine passende Ladestation in den Daten ({daten}), das ist mehr als die Reichweite von etwa {km} km zwischen zwei Halten.", {
+          a: zahlText(l.ab), b: zahlText(l.ab + l.km), km: zahlText(reichweite),
+          daten: frStatus === "geladen" ? t("die Daten gelten für Deutschland und Frankreich") : t("die Daten gelten nur für Deutschland") })
+        : t("Mit diesen Einstellungen ist keine Route mit Ladestopps möglich. Probiere einen größeren Abstand zur Route, eine niedrigere Mindestleistung oder mehr Ladestand.");
       $("planer-ergebnis").innerHTML = kopfHtml(R) + `<p class="warnung">${grund}</p>`;
       routeEbene.clearLayers();
       neuRechnen.ohneErgebnis = R;     // nach geänderten Einstellungen erneut versuchen
@@ -1056,7 +1066,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     letzteRoute = R;
     const v = R.varianten[R.gewaehlt];
     $("planer-ergebnis").innerHTML = kopfHtml(R) +
-      (R.varianten.length > 1 ? `<div class="optionen" role="group" aria-label="Varianten">${R.varianten.map((x, n) => optionKnopf(R, x, n)).join("")}</div>` : "") +
+      (R.varianten.length > 1 ? `<div class="optionen" role="group" aria-label="${t("Varianten")}">${R.varianten.map((x, n) => optionKnopf(R, x, n)).join("")}</div>` : "") +
       varianteHtml(R, v, false) + entlangHtml(R) + FUSSNOTE;
     zeichnePlan(R, v, true);
     entlangWiederherstellen();
@@ -1073,12 +1083,12 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     const sortiert = [...liste].sort(sort === "preis"
       ? (a, b) => (kandidaten[a].ct ?? PLAN.ersatzPreisCt) - (kandidaten[b].ct ?? PLAN.ersatzPreisCt) || kandidaten[b].kw - kandidaten[a].kw
       : (a, b) => kandidaten[b].kw - kandidaten[a].kw || (kandidaten[a].ct ?? 99) - (kandidaten[b].ct ?? 99)).slice(0, 12);
-    if (!sortiert.length) return `<p class="leise">Keine passende Ladestation in diesem Abschnitt.</p>`;
-    return `<div class="auswahl"><p class="leise">Sortiert nach
-      <button type="button" class="textknopf" data-sort="preis" ${sort === "preis" ? 'aria-current="true"' : ""}>Preis</button> ·
-      <button type="button" class="textknopf" data-sort="kw" ${sort === "kw" ? 'aria-current="true"' : ""}>Leistung</button>
-      (die besten 12)</p>` + sortiert.map((ci) => kandidatZeile(kandidaten[ci], ci, "data-wahl")).join("") +
-      `<button type="button" class="knopf-leise" data-abbruch="1">Abbrechen</button></div>`;
+    if (!sortiert.length) return `<p class="leise">${t("Keine passende Ladestation in diesem Abschnitt.")}</p>`;
+    return `<div class="auswahl"><p class="leise">${t("Sortiert nach")}
+      <button type="button" class="textknopf" data-sort="preis" ${sort === "preis" ? 'aria-current="true"' : ""}>${t("Preis")}</button> ·
+      <button type="button" class="textknopf" data-sort="kw" ${sort === "kw" ? 'aria-current="true"' : ""}>${t("Leistung")}</button>
+      ${t("(die besten 12)")}</p>` + sortiert.map((ci) => kandidatZeile(kandidaten[ci], ci, "data-wahl")).join("") +
+      `<button type="button" class="knopf-leise" data-abbruch="1">${t("Abbrechen")}</button></div>`;
   }
 
   function rendereEditor(anpassen) {
@@ -1086,7 +1096,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     const st = R.strecken[edit.strecke];
     edit.plan = { ...bewerten(st.gesamtKm, st.kandidaten, st.auto || auto, edit.indices), strecke: edit.strecke, namen: ["Meine Route"] };
     $("planer-ergebnis").innerHTML = kopfHtml(R) + varianteHtml(R, edit.plan, true) + entlangHtml(R) +
-      `<p class="leise">Keine Live-Preise. Preisbereiche werden mit dem oberen Wert berechnet, „ab“ ist ein Mindestpreis, ≈ geschätzt und ~ unsicher. Monats-, Park- und Blockiergebühren sind nicht enthalten.</p>`;
+      `<p class="leise">${t("Keine Live-Preise. Preisbereiche werden mit dem oberen Wert berechnet, „ab“ ist ein Mindestpreis, ≈ geschätzt und ~ unsicher. Monats-, Park- und Blockiergebühren sind nicht enthalten.")}</p>`;
     zeichnePlan(R, edit.plan, anpassen);
     entlangWiederherstellen();
     aktualisiereLeiste();
@@ -1115,9 +1125,9 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
   $("planer-ergebnis").addEventListener("click", (ev) => {
     const R = letzteRoute;
     if (!R) return;
-    const t = ev.target.closest("button, a");
-    if (!t) return;
-    const d = t.dataset;
+    const el = ev.target.closest("button, a");
+    if (!el) return;
+    const d = el.dataset;
     const zeigeKarte = () => { if (!amRechner.matches) schliesse_planer(); };
     if (d.option !== undefined) {
       R.gewaehlt = Number(d.option);
@@ -1142,7 +1152,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     } else if (d.meideStopp) {
       let namen = [];
       try { namen = JSON.parse(decodeURIComponent(d.meideStopp)); } catch {}
-      const neu = [...new Set(namen.filter((n) => n && n !== "Betreiber unbekannt").map(markeVon))];
+      const neu = [...new Set(namen.filter((n) => n && n !== UNBEKANNT).map(markeVon))];
       if (!neu.length) return;
       auto.meiden = [...new Set([...auto.meiden, ...neu])];
       speichern();
@@ -1212,20 +1222,20 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     try {
       await datenBereit;   // Tarife und gespeicherte Karten müssen vor dem Kostenvergleich vorliegen.
       rendereKarten();
-      $("planer-status").textContent = "Suche Orte …";
+      $("planer-status").textContent = t("Suche Orte …");
       const viaText = $("planer-via").value.trim();
       const [von, nach, via] = await Promise.all([
-        $("planer-von").value.trim() === "" && ich ? { lat: ich.lat, lon: ich.lon, name: "Mein Standort" } : finde($("planer-von").value),
+        $("planer-von").value.trim() === "" && ich ? { lat: ich.lat, lon: ich.lon, name: t("Mein Standort") } : finde($("planer-von").value),
         finde($("planer-nach").value),
         viaText ? finde(viaText) : null,
       ]);
-      $("planer-status").textContent = "Berechne Strecken …";
+      $("planer-status").textContent = t("Berechne Strecken …");
       const wege = [von, ...(via ? [via] : []), nach];
       const zusatz = STRECKEN.filter((s) => s.an());
       const [haupt, ...weitere] = await Promise.allSettled([holeOsrm(wege), ...zusatz.map((s) => holeValhalla(wege, s.optionen))]);
       if (haupt.status === "rejected") throw haupt.reason;
       await ladeDeDaten();
-      const strecken = [bereiteStrecke(haupt.value, { art: "schnell", titel: "Am schnellsten", text: "" })];
+      const strecken = [bereiteStrecke(haupt.value, { art: "schnell", titel: t("Am schnellsten"), text: "" })];
       const ausgefallen = [];
       weitere.forEach((r, i) => {
         if (r.status !== "fulfilled") {
@@ -1239,7 +1249,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
         strecken.push(neu);
       });
       await ladeFrankreich(strecken.flatMap((s) => s.punkte));
-      $("planer-status").textContent = "Suche Ladestopps …";
+      $("planer-status").textContent = t("Suche Ladestopps …");
       await new Promise((r) => setTimeout(r, 30));          // Anzeige aktualisieren, bevor gerechnet wird
       const R = { von, nach, via, strecken, ausgefallen, gewaehlt: 0, abfahrt: abfahrtAus($("planer-abfahrt").value) };
       berechne(R);
@@ -1248,7 +1258,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     } catch (e) {
       console.error(e);
       $("planer-status").textContent = "";
-      melde(e.message || "Planung fehlgeschlagen.");
+      melde(e.message || t("Planung fehlgeschlagen."));
     } finally {
       knopf.disabled = false;
     }

@@ -336,6 +336,15 @@
   .planer.offen { display: block; }
   @media (min-width: 700px) { .planer { right: auto; width: 430px; box-shadow: var(--schatten); } }
   .planer-kopf { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .planer-kopf h2 { flex: 1; min-width: 0; }
+  /* Sprachumschalter (Deutsch / Français) */
+  .sprache-knopf {
+    flex: none; min-height: 44px; padding: 0 14px;
+    border: 1px solid var(--linie); border-radius: 22px;
+    background: var(--grund); color: var(--blau-akzent);
+    font-weight: 600; font-size: .875rem; cursor: pointer;
+  }
+  .liste-sprache { display: flex; justify-content: flex-end; margin-bottom: 10px; }
   .planer h2 { margin: 0; font-size: 1.25rem; }
   .planer label { display: block; margin-top: 10px; font-size: .8125rem; font-weight: 600; color: var(--tinte-leise); }
   .planer input {
@@ -608,6 +617,7 @@
 <section class="planer" id="planer" aria-label="Streckenplaner">
   <div class="planer-kopf">
     <h2>Route planen</h2>
+    <button type="button" class="sprache-knopf" data-sprache-wechsel></button>
     <button type="button" class="schliessen" id="planer-zu" aria-label="Planer schließen">×</button>
   </div>
   <form id="planer-form" novalidate>
@@ -653,6 +663,7 @@
 
 <section class="liste" id="liste" aria-label="Ladesäulen in der Nähe" hidden>
   <div class="liste-kopf">
+    <div class="liste-sprache"><button type="button" class="sprache-knopf" data-sprache-wechsel></button></div>
     <div class="installieren" id="installieren" hidden>
       <img src="icon-192.png" alt="" width="44" height="44">
       <div class="installieren-text">
@@ -723,12 +734,13 @@
 
 <div class="hinweis" id="hinweis" hidden>
   <h2>Noch keine Ladesäulen-Daten</h2>
-  <p>Starte auf GitHub unter <b>Actions</b> den Ablauf „Daten aktualisieren“ und lade die Seite danach neu.</p>
-  <p>Zum Testen am eigenen Rechner: <code>python3 aktualisieren.py</code> ausführen.</p>
+  <p data-t-html>Starte auf GitHub unter <b>Actions</b> den Ablauf „Daten aktualisieren“ und lade die Seite danach neu.</p>
+  <p data-t-html>Zum Testen am eigenen Rechner: <code>python3 aktualisieren.py</code> ausführen.</p>
 </div>
 
 <div class="meldung" id="meldung" role="status" aria-live="polite"></div>
 
+<script src="sprache.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js" crossorigin="anonymous"></script>
 <script src="tarife.js"></script>
 <script>
@@ -745,7 +757,7 @@ const PUNKTE_UNTER_ZOOM = 12;         // darunter werden die Schilder zu Punkten
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const kw = (n) => n == null ? "?" : n.toLocaleString("de-DE", { maximumFractionDigits: 1 });
+const kw = (n) => n == null ? "?" : n.toLocaleString(Sprache.locale, { maximumFractionDigits: 1 });
 
 function entfernungKm(a, b) {
   const r = Math.PI / 180, R = 6371;
@@ -755,10 +767,10 @@ function entfernungKm(a, b) {
 }
 function entfernungKurz(km) {
   if (km < 1) return `${Math.max(10, Math.round(km * 100) * 10)} m`;
-  return `${km.toLocaleString("de-DE", { maximumFractionDigits: km < 10 ? 1 : 0 })} km`;
+  return `${km.toLocaleString(Sprache.locale, { maximumFractionDigits: km < 10 ? 1 : 0 })} km`;
 }
 function entfernungText(km) {
-  return `${entfernungKurz(km)} entfernt`;
+  return t("{d} entfernt", { d: entfernungKurz(km) });
 }
 // Für die Suche: "Haßfurt", "hassfurt" und "Hassfurt" sollen gleich sein, ebenso "Königsberg" und "Koenigsberg".
 function suchform(s) {
@@ -783,7 +795,7 @@ function routeLink(st) {
 }
 function datumText(iso) {
   const d = new Date(iso + "T12:00:00");
-  return isNaN(d) ? iso : d.toLocaleDateString("de-DE", { day: "numeric", month: "long", year: "numeric" });
+  return isNaN(d) ? iso : d.toLocaleDateString(Sprache.locale, { day: "numeric", month: "long", year: "numeric" });
 }
 let meldungTimer;
 function melde(text) {
@@ -851,8 +863,8 @@ function bereite(st) {
   st._stecker = namen;
   st._steckerText = [...zaehlung.entries()]
     .sort((a, b) => b[1].dc - a[1].dc || b[1].anzahl - a[1].anzahl)
-    .map(([n, z]) => `${z.anzahl} × ${n}`).join(" · ");
-  st._titel = st.einrichtungen[0]?.name || st.bezeichnung || st.betreiber[0] || "Ladestation";
+    .map(([n, z]) => `${z.anzahl} × ${Sprache.stecker(n)}`).join(" · ");
+  st._titel = st.einrichtungen[0]?.name || st.bezeichnung || st.betreiber[0] || t("Ladestation");
   st._ausser = st.einrichtungen.every((e) => e.status && !/in betrieb/i.test(e.status));
   st._such = suchform([
     st._titel, st.bezeichnung, st.strasse, st.plz, st.ort, st.kreis, ...st.betreiber,
@@ -887,13 +899,13 @@ function zeichne() {
     standorte++;
     punkte += e.st.ladepunkte;
   }
-  $("zaehler").textContent = `${standorte} Standort${standorte === 1 ? "" : "e"}, ${punkte} Ladepunkt${punkte === 1 ? "" : "e"}`;
+  $("zaehler").textContent = `${tn(standorte, "{n} Standort", "{n} Standorte")}, ${tn(punkte, "{n} Ladepunkt", "{n} Ladepunkte")}`;
   // Auf der Karte anzeigen, dass nicht alles zu sehen ist (Stecker und Suche stellt man in der Liste ein)
   const teile = [];
-  if (nurPreis) teile.push("Mit Preis");
-  if (ausgeblendet.size) teile.push(`${ausgeblendet.size} Betreiber aus`);
-  if (stecker.size) teile.push(`Nur ${[...stecker].join(", ")}`);
-  if (suche) teile.push(`„${suche}“`);
+  if (nurPreis) teile.push(t("Mit Preis"));
+  if (ausgeblendet.size) teile.push(tn(ausgeblendet.size, "{n} Betreiber aus", "{n} Betreiber aus"));
+  if (stecker.size) teile.push(t("Nur {liste}", { liste: [...stecker].map(Sprache.stecker).join(", ") }));
+  if (suche) teile.push(t("„{text}“", { text: suche }));
   $("suchchip").hidden = !teile.length;
   $("suchchip-text").textContent = teile.join(" · ");
   if (aktiv && !passt(aktiv.st)) schliesse();
@@ -920,7 +932,8 @@ function kurzPreis(st) {
   const zahlen = [...p.preis.matchAll(/(\d+(?:,\d+)?)\s*(?:–\s*\d+\s*)?ct/g)].map((m) => parseFloat(m[1].replace(",", ".")));
   if (!zahlen.length) return null;
   const unsicher = p.status !== "gefunden";
-  return { text: `${unsicher ? "~" : "ab "}${String(Math.min(...zahlen)).replace(".", ",")} ct`, unsicher };
+  const wert = `${String(Math.min(...zahlen)).replace(".", ",")} ct`;
+  return { text: unsicher ? `~${wert}` : t("ab {preis}", { preis: wert }), unsicher };
 }
 
 function iconFuer(st) {
@@ -946,7 +959,7 @@ function markerFuer(eintrag) {
   const st = eintrag.st;
   const kp = kurzPreis(st);
   const icon = iconFuer(st);
-  const titel = `${st.ort}, ${st.strasse}: bis ${kw(st.kwMax)} kW${st.dc ? " (DC)" : ""}${kp ? `, ${kp.text}/kWh` : ""}`;
+  const titel = `${t("{ort}, {strasse}: bis {kw} kW", { ort: st.ort, strasse: st.strasse, kw: kw(st.kwMax) })}${st.dc ? " (DC)" : ""}${kp ? `, ${kp.text}/kWh` : ""}`;
   const m = L.marker([st.lat, st.lon], {
     icon, title: titel, alt: titel, keyboard: true,
     zIndexOffset: Math.round(st.kwMax),   // starke Säulen liegen oben
@@ -960,9 +973,9 @@ const amRechner = window.matchMedia("(min-width: 700px)");
 
 // Von wo aus wird gemessen? Eigener Standort, sonst die Mitte des Kartenausschnitts.
 function bezugspunkt() {
-  if (ich) return { ...ich, text: "zu deinem Standort" };
+  if (ich) return { ...ich, text: t("nach Entfernung zu deinem Standort") };
   const m = karte.getCenter();
-  return { lat: m.lat, lon: m.lng, text: "zur Kartenmitte" };
+  return { lat: m.lat, lon: m.lng, text: t("nach Entfernung zur Kartenmitte") };
 }
 
 function zeichneListe() {
@@ -972,8 +985,8 @@ function zeichneListe() {
     .sort((a, b) => a.km - b.km);
 
   $("bezug").innerHTML = treffer.length
-    ? `${treffer.length} Standort${treffer.length === 1 ? "" : "e"}, nach Entfernung ${von.text}` +
-      (ich ? "" : ` · <button type="button" class="textknopf" id="bezug-orten">Standort verwenden</button>`)
+    ? `${tn(treffer.length, "{n} Standort", "{n} Standorte")}, ${von.text}` +
+      (ich ? "" : ` · <button type="button" class="textknopf" id="bezug-orten">${t("Standort verwenden")}</button>`)
     : "";
   $("bezug-orten")?.addEventListener("click", orten);
 
@@ -987,11 +1000,11 @@ function zeichneListe() {
         <b>${esc(st._titel)}</b>
         <span>${esc(adresse)}</span>
         ${kurzPreis(st) ? `<span class="eintrag-preis">${kurzPreis(st).text}/kWh</span>` : ""}
-        ${st._ausser ? `<span class="warnung">Derzeit außer Betrieb</span>`
+        ${st._ausser ? `<span class="warnung">${t("Derzeit außer Betrieb")}</span>`
           : st._steckerText ? `<span>${esc(st._steckerText)}</span>` : ""}
       </span>
       <span class="eintrag-weg">${entfernungKurz(km)}</span>
-      <span class="sr-only">, bis ${kw(st.kwMax)} kW${st.dc ? ", Schnellladen" : ""}</span>
+      <span class="sr-only">${t(", bis {kw} kW", { kw: kw(st.kwMax) })}${st.dc ? t(", Schnellladen") : ""}</span>
     </button></li>`;
   }).join("");
 }
@@ -1012,7 +1025,7 @@ function baueSteckerKnoepfe() {
   const gruppen = STECKER_GRUPPEN.filter((g) => g.passt.some((n) => vorhanden.has(n)));
   for (const n of [...stecker]) if (!gruppen.some((g) => g.name === n)) stecker.delete(n);
   $("stecker").innerHTML = gruppen.length < 2 ? "" : gruppen.map((g) =>
-    `<button type="button" aria-pressed="${stecker.has(g.name)}" data-stecker="${esc(g.name)}">${esc(g.name)}</button>`
+    `<button type="button" aria-pressed="${stecker.has(g.name)}" data-stecker="${esc(g.name)}">${esc(Sprache.stecker(g.name))}</button>`
   ).join("");
 }
 $("stecker").addEventListener("click", (ev) => {
@@ -1048,7 +1061,7 @@ function kurzName(n) {
   return n.replace(/[\s-]+(GmbH|AG|SE|KG|eG|oHG|mbH)\b.*$/i, "").replace(/ (mobility\+|Germany|Deutschland|Dienstleistung|Immobilienverwaltungs|Marken-Discount).*$/, "").replace(/\s{2,}/g, " ");
 }
 function baueMeineKnoepfe() {
-  const wege = [...new Set(alleTarife().filter((t) => t.typ !== "adhoc").map((t) => t.name))].sort((a, b) => a.localeCompare(b, "de"));
+  const wege = [...new Set(alleTarife().filter((t) => t.typ !== "adhoc").map((x) => x.name))].sort((a, b) => a.localeCompare(b, Sprache.code));
   $("karten").innerHTML = wege.map((n) =>
     `<button type="button" aria-pressed="${karten.has(n)}" data-karte="${esc(n)}">${esc(n)}</button>`).join("");
   const zahl = new Map();
@@ -1124,7 +1137,7 @@ function zeigeAnsicht(neu) {
   document.body.classList.toggle("ansicht-liste", liste);
   $("liste").hidden = !liste;
   $("ansicht").setAttribute("aria-expanded", String(liste));
-  $("ansicht-text").textContent = liste ? "Karte" : "Liste";
+  $("ansicht-text").textContent = liste ? t("Karte") : t("Liste");
   $("ansicht-icon").innerHTML = liste ? ICON_KARTE : ICON_LISTE;
   $("zur-karte").hidden = !liste || amRechner.matches;
   if (liste) {
@@ -1163,13 +1176,13 @@ function punkteListe(einrichtung) {
   // Gleiche Ladepunkte zusammenfassen: "2 × CCS 150 kW"
   const gruppen = new Map();
   for (const p of einrichtung.punkte) {
-    const name = p.stecker.join(" / ") || "Stecker unbekannt";
+    const name = p.stecker.map(Sprache.stecker).join(" / ") || t("Stecker unbekannt");
     const key = `${p.dc}|${name}|${p.kw}`;
     const g = gruppen.get(key) || { ...p, name, anzahl: 0 };
     g.anzahl++;
     gruppen.set(key, g);
   }
-  if (!gruppen.size) return `<p class="adresse">Keine Angaben zu den Steckern.</p>`;
+  if (!gruppen.size) return `<p class="adresse">${t("Keine Angaben zu den Steckern.")}</p>`;
   return `<ul class="punkte">${[...gruppen.values()].map((g) => `
     <li><span class="art${g.dc ? " dc" : ""}">${g.dc ? "DC" : "AC"}</span>
       ${g.anzahl > 1 ? `${g.anzahl} × ` : ""}${esc(g.name)}<b>${kw(g.kw)} kW</b></li>`).join("")}
@@ -1209,9 +1222,9 @@ function oeffne(eintrag) {
     <div class="saeule">
       <div class="saeule-kopf">
         <span>${esc(mehrereBetreiber ? e.betreiber
-          : mehrereSaeulen ? `Säule ${i + 1}`
-          : `${e.anzahl} Ladepunkt${e.anzahl === 1 ? "" : "e"}`)}</span>
-        ${e.status && !/in betrieb/i.test(e.status) ? `<span class="warnung">${esc(e.status)}</span>` : ""}
+          : mehrereSaeulen ? t("Säule {n}", { n: i + 1 })
+          : tn(e.anzahl, "{n} Ladepunkt", "{n} Ladepunkte"))}</span>
+        ${e.status && !/in betrieb/i.test(e.status) ? `<span class="warnung">${esc(Sprache.daten(e.status))}</span>` : ""}
       </div>
       ${punkteListe(e)}
     </div>`).join("");
@@ -1220,11 +1233,11 @@ function oeffne(eintrag) {
   const bezahlen = einmalig(st.einrichtungen.flatMap((e) => [].concat(e.bezahlen || [])));
   const oeffnung = einmalig(st.einrichtungen.map((e) => e.oeffnung));
   const parken = einmalig(st.einrichtungen.map((e) => e.parken));
-  if (!mehrereBetreiber && st.betreiber[0]) html += info("Betreiber", [st.betreiber[0]]);
+  if (!mehrereBetreiber && st.betreiber[0]) html += info(t("Betreiber"), [st.betreiber[0]]);
   html += preisBlock(st);
-  if (bezahlen.length) html += info("Bezahlen", [bezahlen.join(" · ")]);
-  if (oeffnung.length) html += info("Öffnungszeiten", oeffnung);
-  if (parken.length) html += info("Parken", parken);
+  if (bezahlen.length) html += info(t("Bezahlen"), [bezahlen.map(Sprache.daten).join(" · ")]);
+  if (oeffnung.length) html += info(t("Öffnungszeiten"), oeffnung.map(Sprache.zeiten));
+  if (parken.length) html += info(t("Parken"), parken.map(Sprache.daten));
   $("blatt-inhalt").innerHTML = html;
 
   $("blatt").classList.add("offen");
@@ -1236,29 +1249,30 @@ function preisBlock(st) {
   const p = preise.standorte[st.id];
   const optionen = LadeTarife.optionen(st, alleTarife());
   if (!p && !optionen.length) return "";
-  let h = `<div class="info"><h3>Preis (brutto)${p ? `, recherchiert ${esc(preise.stand || "")}` : ""}</h3>`;
+  const stand = esc(Sprache.monat(preise.stand || ""));
+  let h = `<div class="info"><h3>${t("Preis (brutto)")}${p ? t(", recherchiert {stand}", { stand }) : ""}</h3>`;
   const eigen = eigenerPreis(st);
   if (eigen && LadeTarife.hatPreis(eigen)) {
-    h += `<p><strong>Für mich: ${String(eigen.v).replace(".", ",")} ct/kWh</strong> (${esc(eigen.name)})</p>`;
+    h += `<p><strong>${t("Für mich: {preis} ct/kWh", { preis: String(eigen.v).replace(".", ",") })}</strong> (${esc(eigen.name)})</p>`;
   }
   // Je nach Karte und Betreiber ein anderer Preis: alle passenden Wege, günstigste zuerst
   if (optionen.length) {
-    h += `<p class="preis-hinweis">Je nach Ladekarte:</p><ul class="kartenpreise">` + optionen.slice(0, 12).map((t) => {
-      const art = t.nutzbar === false ? "" : t.typ === "adhoc" ? "für alle" : karten.has(t.name) ? "habe ich"
-        : t.grund ? `${String(t.grund).replace(".", ",")} €/Monat` : "";
-      return `<li${eigen && t.name === eigen.name ? ' class="meins"' : ""}><span>${esc(t.name)}${art ? ` <small>${esc(art)}</small>` : ""}</span><b>${esc(LadeTarife.label(t))}</b></li>`;
+    h += `<p class="preis-hinweis">${t("Je nach Ladekarte:")}</p><ul class="kartenpreise">` + optionen.slice(0, 12).map((x) => {
+      const art = x.nutzbar === false ? "" : x.typ === "adhoc" ? t("für alle") : karten.has(x.name) ? t("habe ich")
+        : x.grund ? t("{preis} €/Monat", { preis: String(x.grund).replace(".", ",") }) : "";
+      return `<li${eigen && x.name === eigen.name ? ' class="meins"' : ""}><span>${esc(x.name)}${art ? ` <small>${esc(art)}</small>` : ""}</span><b>${esc(LadeTarife.label(x))}</b></li>`;
     }).join("") + `</ul>`;
   }
   if (p) {
-    const text = p.status === "nicht gefunden" ? "Preis nicht bekannt" : p.preis;
-    if (optionen.length) h += `<p class="preis-hinweis">Angaben des Betreibers:</p>`;
+    const text = p.status === "nicht gefunden" ? t("Preis nicht bekannt") : p.preis;
+    if (optionen.length) h += `<p class="preis-hinweis">${t("Angaben des Betreibers:")}</p>`;
     h += `<p><strong>${esc(text)}</strong></p>`;
-    if (p.status === "teilweise / unsicher") h += `<p class="preis-hinweis">Unsicher oder nicht bestätigt</p>`;
-    if (p.status === "nicht gefunden") h += `<p class="preis-hinweis">Bitte an der Säule oder in der Lade-App prüfen.</p>`;
+    if (p.status === "teilweise / unsicher") h += `<p class="preis-hinweis">${t("Unsicher oder nicht bestätigt")}</p>`;
+    if (p.status === "nicht gefunden") h += `<p class="preis-hinweis">${t("Bitte an der Säule oder in der Lade-App prüfen.")}</p>`;
     else if (p.hinweis) h += `<p class="preis-hinweis">${esc(p.hinweis)}</p>`;
-    if (p.link && p.status !== "nicht gefunden") h += `<p class="preis-hinweis"><a href="${esc(p.link)}" target="_blank" rel="noopener">Preisquelle</a></p>`;
+    if (p.link && p.status !== "nicht gefunden") h += `<p class="preis-hinweis"><a href="${esc(p.link)}" target="_blank" rel="noopener">${t("Preisquelle")}</a></p>`;
   }
-  return h + `<p class="preis-hinweis">Recherchiert im ${esc(preise.stand || "")}, ohne Gewähr. Verbindlich ist der Preis an der Säule.</p></div>`;
+  return h + `<p class="preis-hinweis">${t("Recherchiert im {stand}, ohne Gewähr. Verbindlich ist der Preis an der Säule.", { stand })}</p></div>`;
 }
 
 function info(titel, werte) {
@@ -1287,7 +1301,7 @@ document.querySelectorAll(".filter button").forEach((knopf) => {
 // ===================== Eigener Standort =====================
 $("orten").addEventListener("click", orten);
 function orten() {
-  if (!("geolocation" in navigator)) return melde("Dieses Gerät kann den Standort nicht bestimmen.");
+  if (!("geolocation" in navigator)) return melde(t("Dieses Gerät kann den Standort nicht bestimmen."));
   $("orten").setAttribute("aria-busy", "true");
   navigator.geolocation.getCurrentPosition(
     (pos) => {
@@ -1296,7 +1310,7 @@ function orten() {
       if (ichMarker) ichMarker.remove();
       ichMarker = L.marker([ich.lat, ich.lon], {
         icon: L.divIcon({ className: "marker", html: '<span class="ich"></span>', iconSize: [0, 0] }),
-        title: "Dein Standort", keyboard: false, zIndexOffset: 2000,
+        title: t("Dein Standort"), keyboard: false, zIndexOffset: 2000,
       }).addTo(karte);
       karte.flyTo([ich.lat, ich.lon], Math.max(karte.getZoom(), 13), { duration: 0.6 });
       if (aktiv) oeffne(aktiv);
@@ -1305,8 +1319,8 @@ function orten() {
     (fehler) => {
       $("orten").removeAttribute("aria-busy");
       melde(fehler.code === 1
-        ? "Standortzugriff ist blockiert. Erlaube ihn in den Browser-Einstellungen."
-        : "Standort nicht gefunden. Versuch es draußen noch einmal.");
+        ? t("Standortzugriff ist blockiert. Erlaube ihn in den Browser-Einstellungen.")
+        : t("Standort nicht gefunden. Versuch es draußen noch einmal."));
     },
     { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
   );
@@ -1326,9 +1340,9 @@ async function lade() {
     try {
       const ta = await fetch(TARIFE_URL, { cache: "no-cache" });
       if (ta.ok) {
-        const t = await ta.json();
+        const td = await ta.json();
         tarifeNachBetreiber = {};
-        for (const x of t.tarife) (tarifeNachBetreiber[x.betreiber] ||= []).push(x);
+        for (const x of td.tarife) (tarifeNachBetreiber[x.betreiber] ||= []).push(x);
       }
     } catch (e) { console.warn("Tarife nicht geladen", e); }
     datenStand = daten.stand;
@@ -1350,8 +1364,9 @@ async function lade() {
     stecker = new Set(Array.isArray(gemerkt.stecker) ? gemerkt.stecker : []);
     baueSteckerKnoepfe();
     $("quelle").textContent =
-      `Datenstand ${datumText(daten.stand)}. Quelle: ${daten.quelle}. Preise recherchiert ${preise.stand || "–"}. Angaben ohne Gewähr.`;
-    karte.attributionControl.addAttribution(`Ladesäulen: Bundesnetzagentur.de (CC BY 4.0)`);
+      t("Datenstand {datum}. Quelle: {quelle}. Preise recherchiert {preise}. Angaben ohne Gewähr.",
+        { datum: datumText(daten.stand), quelle: daten.quelle, preise: Sprache.monat(preise.stand) || "–" });
+    karte.attributionControl.addAttribution(t("Ladesäulen: Bundesnetzagentur.de (CC BY 4.0)"));
     // Nur wenn die Karte schon eine Größe hat. In einem versteckten Tab ist sie 0×0,
     // dann würde Leaflet auf die höchste Zoomstufe springen.
     if (alle.length && karte.getSize().x > 0) {
@@ -1366,8 +1381,8 @@ async function lade() {
   } catch (e) {
     console.error(e);
     if (navigator.onLine === false) {
-      $("hinweis").innerHTML = `<h2>Keine Verbindung</h2>
-        <p>Die Ladesäulen sind auf diesem Gerät noch nicht gespeichert. Öffne die App einmal mit Internet, danach geht sie auch offline.</p>`;
+      $("hinweis").innerHTML = `<h2>${t("Keine Verbindung")}</h2>
+        <p>${t("Die Ladesäulen sind auf diesem Gerät noch nicht gespeichert. Öffne die App einmal mit Internet, danach geht sie auch offline.")}</p>`;
     }
     $("hinweis").hidden = false;
     $("zaehler").textContent = "";
@@ -1379,8 +1394,8 @@ const datenBereit = lade();
 function zeigeVerbindung() {
   const offline = navigator.onLine === false;
   $("offline").hidden = !offline;
-  const kurz = new Date(datenStand + "T12:00:00").toLocaleDateString("de-DE");
-  $("offline").textContent = datenStand && kurz !== "Invalid Date" ? `Offline · Stand ${kurz}` : "Offline";
+  const kurz = new Date(datenStand + "T12:00:00").toLocaleDateString(Sprache.locale);
+  $("offline").textContent = datenStand && kurz !== "Invalid Date" ? t("Offline · Stand {datum}", { datum: kurz }) : t("Offline");
 }
 window.addEventListener("online", zeigeVerbindung);
 window.addEventListener("offline", zeigeVerbindung);
@@ -1401,7 +1416,7 @@ function zeigeInstallHinweis() {
     $("installieren-ja").hidden = false;
   } else if (istIOS) {
     $("installieren-text").textContent =
-      "Tippe in Safari auf „Teilen“ und dann auf „Zum Home-Bildschirm“. Dann startet die Karte wie eine App, auch ohne Netz.";
+      t("Tippe in Safari auf „Teilen“ und dann auf „Zum Home-Bildschirm“. Dann startet die Karte wie eine App, auch ohne Netz.");
   } else {
     return;   // Browser bietet keine Installation an
   }
