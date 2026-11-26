@@ -321,6 +321,32 @@ function fahrzeitProfil(abschnitte, gesamtMin) {
   };
 }
 
+// Eigenes Reisetempo auf Autobahnen und Schnellstraßen.
+// Als Autobahn gilt ein Abschnitt, auf dem der Routendienst im Schnitt mindestens abKmh rechnet.
+// Dort wird mit schnitt × Tempo gefahren (Verkehr, Baustellen, Auffahrten).
+// Der eingestellte Verbrauch gilt für bezug km/h; der Luftwiderstand wächst mit dem Quadrat
+// des Tempos: Verbrauch(v) ~ luft + v², ergibt etwa +10 % je 10 km/h über 120.
+const TEMPO = { abKmh: 90, bezug: 120, schnitt: 0.9, luft: 11600 };
+
+function verbrauchsFaktor(tempo) {
+  return (TEMPO.luft + tempo * tempo) / (TEMPO.luft + TEMPO.bezug * TEMPO.bezug);
+}
+
+// abschnitte: [[Meter, Sekunden], ...]. Ergebnis: neue Abschnitte, Autobahnanteil der Strecke
+// und Faktor für den Verbrauch der ganzen Strecke (nur der Autobahnanteil ändert sich).
+function tempoAnpassung(abschnitte, tempo) {
+  if (!(tempo > 0) || !abschnitte?.length) return { abschnitte, autobahnAnteil: 0, faktor: 1 };
+  let autobahn = 0, gesamt = 0;
+  const neu = abschnitte.map(([m, s]) => {
+    gesamt += m || 0;
+    if (!(m > 0 && s > 0) || (m / s) * 3.6 < TEMPO.abKmh) return [m, s];
+    autobahn += m;
+    return [m, m / (tempo * TEMPO.schnitt / 3.6)];
+  });
+  const anteil = gesamt > 0 ? autobahn / gesamt : 0;
+  return { abschnitte: neu, autobahnAnteil: anteil, faktor: 1 - anteil + anteil * verbrauchsFaktor(tempo) };
+}
+
 // Zeitleiste eines Plans: je Etappe Strecke und Fahrzeit, je Stopp Ankunft und Weiterfahrt
 // (Minuten ab Abfahrt). fahrzeit kommt aus fahrzeitProfil.
 function zeitplan(plan, kandidaten, gesamtKm, fahrzeit) {
@@ -433,7 +459,7 @@ function polyline6(text) {
 if (typeof module !== "undefined") {
   module.exports = {
     PLAN, zerlege, entlangDerRoute, deckung, planen, bewerten, ladeStopp, ladeMinuten, alleVarianten,
-    entfernungKm: planerEntfernungKm, groessteLuecke, fahrzeitProfil, zeitplan, kartenVergleich, MARKEN, meidet, markeVon, polyline6,
+    entfernungKm: planerEntfernungKm, groessteLuecke, fahrzeitProfil, tempoAnpassung, verbrauchsFaktor, TEMPO, zeitplan, kartenVergleich, MARKEN, meidet, markeVon, polyline6,
   };
 }
 
@@ -445,7 +471,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
   const VALHALLA_URL = "https://valhalla1.openstreetmap.de/route";
   let frStatus = "";   // "", "geladen" oder "fehlt"; Fehler erlauben einen erneuten Versuch
   const PLANER_SPEICHER = "ladekarte.planer";
-  const AUTO_STANDARD = { akku: 60, verbrauch: 20, maxKw: 100, start: 80, reserve: 10, ziel: 80, minKw: 50, umweg: 3,
+  const AUTO_STANDARD = { akku: 60, verbrauch: 20, maxKw: 100, start: 80, reserve: 10, ziel: 80, minKw: 50, umweg: 3, tempo: 120,
     fahrzeug: "", meiden: [], schoen: true, maut: true };
 
   // Richtwerte: nutzbarer Akku (kWh), höchste DC-Ladeleistung (kW), Verbrauch gemischt mit viel Autobahn (kWh/100 km)
@@ -491,7 +517,8 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
 
   const felder = [
     ["akku", "Akku (kWh)", 10, 200, 1],
-    ["verbrauch", "Verbrauch (kWh/100 km)", 8, 40, 0.5],
+    ["verbrauch", "Verbrauch bei 120 km/h (kWh/100 km)", 8, 40, 0.5],
+    ["tempo", "Tempo auf der Autobahn (km/h)", 80, 200, 5],
     ["maxKw", "Max. Ladeleistung (kW)", 11, 350, 1],
     ["start", "Start-Ladestand (%)", 10, 100, 1],
     ["reserve", "Reserve bei Ankunft (%)", 0, 40, 1],
@@ -517,6 +544,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
       $("planer-fahrzeug").value = "";
     }
     speichern();
+    neuRechnen();
   });
 
   $("planer-fahrzeug").innerHTML = `<option value="">Eigene Werte</option>` +
@@ -719,20 +747,28 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
   }
 
   // Varianten für alle Strecken: auf der schnellsten drei Wertungen, auf den anderen die ausgewogene
+  // Reisetempo: Fahrzeit und Verbrauch je Strecke neu (st.auto ist auto mit angepasstem Verbrauch)
+  function tempoFuer(st) {
+    const t = tempoAnpassung(st.route.abschnitte, auto.tempo);
+    st.fahrzeit = fahrzeitProfil(t.abschnitte, st.route.duration / 60);
+    st.autobahnAnteil = t.autobahnAnteil;
+    st.auto = { ...auto, verbrauch: auto.verbrauch * t.faktor };
+  }
+
   function berechne(R) {
-    for (const st of R.strecken) st.kandidaten = kandidatenFuer(st.punkte);
+    for (const st of R.strecken) { st.kandidaten = kandidatenFuer(st.punkte); tempoFuer(st); }
     const roh = [];
     const schnell = R.strecken[0];
-    for (const v of alleVarianten(schnell.gesamtKm, schnell.kandidaten, auto)) roh.push({ ...v, strecke: 0 });
+    for (const v of alleVarianten(schnell.gesamtKm, schnell.kandidaten, schnell.auto)) roh.push({ ...v, strecke: 0 });
     R.strecken.forEach((st, i) => {
       if (i === 0) return;
-      const plan = planen(st.gesamtKm, st.kandidaten, auto, WERTUNGEN[2].wert);
+      const plan = planen(st.gesamtKm, st.kandidaten, st.auto, WERTUNGEN[2].wert);
       if (plan) roh.push({ ...plan, strecke: i, namen: [st.titel] });
     });
     // Mit bewerten() nachrechnen: gleiche Werte wie im Editor, dazu Ankunftsladestand und Warnungen
     R.varianten = roh.map((v) => {
       const st = R.strecken[v.strecke];
-      return { ...bewerten(st.gesamtKm, st.kandidaten, auto, v.stopps.map((s) => s.index)), strecke: v.strecke, namen: v.namen };
+      return { ...bewerten(st.gesamtKm, st.kandidaten, st.auto, v.stopps.map((s) => s.index)), strecke: v.strecke, namen: v.namen };
     });
     if (!(R.gewaehlt < R.varianten.length)) R.gewaehlt = 0;
   }
@@ -869,7 +905,8 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
   function kopfHtml(R) {
     const schnell = R.strecken[0];
     const via = R.via ? ` über ${esc(R.via.name)}` : "";
-    let h = `<p class="leise">${esc(R.von.name)} → ${esc(R.nach.name)}${via}: ${zahlText(schnell.route.distance / 1000)} km, reine Fahrzeit ${zeitText(schnell.route.duration / 60)}.</p>`;
+    let h = `<p class="leise">${esc(R.von.name)} → ${esc(R.nach.name)}${via}: ${zahlText(schnell.route.distance / 1000)} km, reine Fahrzeit ${zeitText(schnell.fahrzeit(1))}.</p>`;
+    if (schnell.auto && schnell.autobahnAnteil > 0) h += `<p class="leise">Mit ${zahlText(auto.tempo)} km/h auf der Autobahn (${zahlText(schnell.autobahnAnteil * 100)} % der Strecke): Verbrauch im Schnitt etwa ${zahlText(schnell.auto.verbrauch, 1)} kWh/100 km.</p>`;
     if (frStatus === "fehlt") h += `<p class="warnung">Ladestationen für Frankreich konnten nicht geladen werden. Dieser Plan berücksichtigt nur Deutschland. Bitte vor einer Fahrt nach Frankreich erneut mit Internet planen.</p>`;
     if (R.ausgefallen.length) h += `<p class="leise">${esc(R.ausgefallen.join(" und "))}: Strecke konnte gerade nicht berechnet werden.</p>`;
     if (gemieden().size) h += `<p class="leise">Ohne ${esc([...gemieden()].join(", "))}.</p>`;
@@ -1006,7 +1043,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
       const schnell = R.strecken[0];
       const km = schnell.gesamtKm;
       const l = groessteLuecke(km, schnell.kandidaten);
-      const reichweite = (auto.akku * (auto.ziel - auto.reserve) / 100) / (auto.verbrauch / 100);
+      const reichweite = (auto.akku * (auto.ziel - auto.reserve) / 100) / ((schnell.auto || auto).verbrauch / 100);
       const grund = l.km > reichweite
         ? `Zwischen Kilometer ${zahlText(l.ab)} und ${zahlText(l.ab + l.km)} gibt es keine passende Ladestation in den Daten (${frStatus === "geladen" ? "die Daten gelten für Deutschland und Frankreich" : "die Daten gelten nur für Deutschland"}), das ist mehr als die Reichweite von etwa ${zahlText(reichweite)} km zwischen zwei Halten.`
         : `Mit diesen Einstellungen ist keine Route mit Ladestopps möglich. Probiere einen größeren Abstand zur Route, eine niedrigere Mindestleistung oder mehr Ladestand.`;
@@ -1047,7 +1084,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
   function rendereEditor(anpassen) {
     const R = letzteRoute;
     const st = R.strecken[edit.strecke];
-    edit.plan = { ...bewerten(st.gesamtKm, st.kandidaten, auto, edit.indices), strecke: edit.strecke, namen: ["Meine Route"] };
+    edit.plan = { ...bewerten(st.gesamtKm, st.kandidaten, st.auto || auto, edit.indices), strecke: edit.strecke, namen: ["Meine Route"] };
     $("planer-ergebnis").innerHTML = kopfHtml(R) + varianteHtml(R, edit.plan, true) + entlangHtml(R) +
       `<p class="leise">Keine Live-Preise. Preisbereiche werden mit dem oberen Wert berechnet, „ab“ ist ein Mindestpreis, ≈ geschätzt und ~ unsicher. Monats-, Park- und Blockiergebühren sind nicht enthalten.</p>`;
     zeichnePlan(R, edit.plan, anpassen);
