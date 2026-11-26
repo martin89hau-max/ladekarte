@@ -8,7 +8,7 @@
 //
 // Wenn du diese Datei änderst, VERSION hochzählen, damit Handys die neue Fassung holen.
 
-const VERSION = "v13";
+const VERSION = "v14";
 const HUELLE = `ladekarte-huelle-${VERSION}`;
 const DATEN = "ladekarte-daten";
 const KACHELN = "ladekarte-kacheln";
@@ -18,9 +18,11 @@ const NETZ_WARTEZEIT = 5000;      // so lange aufs Netz warten, dann gespeichert
 
 const EIGENE_DATEIEN = [
   "./",
+  "sprache.js",
   "planer.js",
   "tarife.js",
   "manifest.webmanifest",
+  "manifest.fr.webmanifest",
   "icon-192.png",
   "icon-512.png",
   "icon-maskable-512.png",

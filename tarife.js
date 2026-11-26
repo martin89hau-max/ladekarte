@@ -88,12 +88,17 @@ const LadeTarife = (() => {
     return kWh * p.v / 100 + (p.jeVorgang || 0);
   }
 
-  const zahl = (v) => new Intl.NumberFormat("de-DE", { maximumFractionDigits: 2 }).format(v);
+  // Übersetzung, wenn sprache.js geladen ist (im Browser); in Node bleibt alles Deutsch
+  const tr = (text, werte) => (typeof globalThis.t === "function" ? globalThis.t(text, werte)
+    : text.replace(/\{(\w+)\}/g, (g, k) => (werte && k in werte ? werte[k] : g)));
+  const ort = () => (typeof Sprache !== "undefined" ? Sprache.locale : "de-DE");
+  const zahl = (v) => new Intl.NumberFormat(ort(), { maximumFractionDigits: 2 }).format(v);
   function label(t) {
-    if (t?.nutzbar === false) return "nicht nutzbar";
-    if (!t || !Number.isFinite(t.v)) return "Preis vor Ort prüfen";
+    if (t?.nutzbar === false) return tr("nicht nutzbar");
+    if (!t || !Number.isFinite(t.v)) return tr("Preis vor Ort prüfen");
     if (t.min != null) return `${zahl(t.min)}–${zahl(t.v)} ct/kWh`;
-    return `${t.ab ? "ab " : ""}${zahl(t.v)} ct/kWh${t.unsicher && !t.ab ? "~" : ""}`;
+    const preis = `${zahl(t.v)} ct/kWh`;
+    return `${t.ab ? tr("ab {preis}", { preis }) : preis}${t.unsicher && !t.ab ? "~" : ""}`;
   }
   return { passt, optionen, bester, kosten, hatPreis, label, normal };
 })();
