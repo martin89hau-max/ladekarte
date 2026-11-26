@@ -173,3 +173,20 @@ test('Planen: Varianten mit Ladekurve und Startgebühr bleiben erreichbar', () =
   assert.ok(guenstig.euro <= schnell.euro + 1e-9);
   assert.ok(schnell.minuten <= guenstig.minuten + 1e-9);
 });
+
+test('Reisetempo: Autobahnabschnitte langsamer oder schneller, Verbrauch mit dem Tempo', () => {
+  // 100 km Autobahn mit 110 km/h, 10 km Landstraße mit 60 km/h
+  const ab = [[100000, 100000 / (110 / 3.6)], [10000, 10000 / (60 / 3.6)]];
+  const t110 = P.tempoAnpassung(ab, 110);
+  assert.ok(Math.abs(t110.autobahnAnteil - 100 / 110) < 1e-9);
+  assert.ok(Math.abs(t110.abschnitte[0][1] - 100000 / (99 / 3.6)) < 1e-6, 'Autobahn mit 90 % des Tempos');
+  assert.equal(t110.abschnitte[1][1], ab[1][1], 'Landstraße bleibt');
+  assert.ok(t110.faktor < 1, '110 km/h braucht weniger als 120');
+  const t120 = P.tempoAnpassung(ab, 120);
+  assert.ok(Math.abs(t120.faktor - 1) < 1e-9, 'bei 120 km/h gilt der eingestellte Verbrauch');
+  const t130 = P.tempoAnpassung(ab, 130);
+  assert.ok(t130.faktor > 1.07 && t130.faktor < 1.12, 'etwa +10 % je 10 km/h');
+  assert.ok(t130.abschnitte[0][1] < t120.abschnitte[0][1]);
+  assert.equal(P.tempoAnpassung(ab, 0).faktor, 1);
+  assert.equal(P.tempoAnpassung([], 130).faktor, 1);
+});
