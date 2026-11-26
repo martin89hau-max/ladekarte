@@ -1581,6 +1581,58 @@
    "geprueft": "2026-10-27",
    "quelle": "https://incharge.vattenfall.de/fair-laden",
    "hinweis": "Offizielle Seite: DC über 50 kW 44 oder 49 ct je Standort (hier Mindestpreis), gültig seit 23.03.2026 bis auf Weiteres, ohne Blockiergebühr, Direktzahlung per Karte/Apple/Google Pay. AC 47 ct nur aus Presse (electrive, 'unverändert'), auf der Seite nicht als Ad-hoc-Preis belegt. Keine Startgebühr genannt."
+  },
+  {
+   "land": "FR",
+   "name": "Chargemap Pass",
+   "typ": "karte",
+   "grund": 0,
+   "ac": null,
+   "dc": null,
+   "betreiber": "*",
+   "sicherheit": "teilweise / unsicher",
+   "geprueft": "2026-11-26",
+   "quelle": "https://chargemap.com/fr-fr/price",
+   "hinweis": "Kein fester Preis: Den Preis legt der jeweilige Betreiber fest, Chargemap schlägt etwa 10 % Servicegebühr auf (mit dem Abo Chargemap Boost ohne Aufschlag). Preis je Säule in der Chargemap-App prüfen. Karte 14,90 € einmalig, ohne Grundgebühr; gilt in 19 Ländern, nicht an jeder Säule."
+  },
+  {
+   "land": "FR",
+   "name": "Pass IZIVIA",
+   "typ": "karte",
+   "grund": 0,
+   "ac": null,
+   "dc": null,
+   "betreiber": "*",
+   "sicherheit": "teilweise / unsicher",
+   "geprueft": "2026-11-26",
+   "quelle": "https://izivia.com/pass-de-recharge-voitures-electriques",
+   "hinweis": "Kein fester Preis: Den Preis legt der jeweilige Betreiber fest, die IZIVIA-App zeigt ihn je Säule. Pass 15 € einmalig, ohne Abo, monatliche Abrechnung; über 200 Netze in Frankreich und Europa, nicht an jeder Säule."
+  },
+  {
+   "land": "DE",
+   "name": "Chargemap Pass",
+   "typ": "karte",
+   "grund": 0,
+   "ac": null,
+   "dc": null,
+   "betreiber": "*",
+   "sicherheit": "teilweise / unsicher",
+   "geprueft": "2026-11-26",
+   "quelle": "https://chargemap.com/fr-fr/price",
+   "hinweis": "Kein fester Preis: Den Preis legt der jeweilige Betreiber fest, Chargemap schlägt etwa 10 % Servicegebühr auf (mit dem Abo Chargemap Boost ohne Aufschlag). Preis je Säule in der Chargemap-App prüfen. Karte 14,90 € einmalig, ohne Grundgebühr; gilt in 19 Ländern, nicht an jeder Säule."
+  },
+  {
+   "land": "DE",
+   "name": "Pass IZIVIA",
+   "typ": "karte",
+   "grund": 0,
+   "ac": null,
+   "dc": null,
+   "betreiber": "*",
+   "sicherheit": "teilweise / unsicher",
+   "geprueft": "2026-11-26",
+   "quelle": "https://izivia.com/pass-de-recharge-voitures-electriques",
+   "hinweis": "Kein fester Preis: Den Preis legt der jeweilige Betreiber fest, die IZIVIA-App zeigt ihn je Säule. Pass 15 € einmalig, ohne Abo, monatliche Abrechnung; über 200 Netze in Frankreich und Europa, nicht an jeder Säule."
   }
  ]
 }
