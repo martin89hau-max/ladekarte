@@ -115,6 +115,18 @@ test('Nicht laden bei: Marken über alle Schreibweisen, gemischte Standorte blei
   assert.equal(P.meidet(['Tesla'], new Set()), false);
 });
 
+test('Nicht laden bei: IECharge und einzeln gemiedene Betreiber', () => {
+  assert.equal(P.markeVon('NW IECharge'), 'IECharge');
+  assert.equal(P.markeVon('Qwello GmbH | FR*QWC'), 'Qwello GmbH | FR*QWC');
+  assert.equal(P.meidet(['NW IECharge'], new Set(['IECharge'])), true);
+  const qwello = new Set(['Qwello GmbH | FR*QWC']);
+  assert.equal(P.meidet(['Qwello GmbH | FR*QWC'], qwello), true);
+  assert.equal(P.meidet(['qwello gmbh | fr*qwc'], qwello), true);
+  assert.equal(P.meidet(['Qwello GmbH'], qwello), false, 'einzelne Namen nur genau');
+  assert.equal(P.meidet(['NW IECharge', 'Qwello GmbH | FR*QWC'], new Set(['IECharge', 'Qwello GmbH | FR*QWC'])), true);
+  assert.equal(P.meidet(['NW IECharge', 'IONITY'], new Set(['IECharge'])), false);
+});
+
 test('Polyline6 von Valhalla wird richtig gelesen', () => {
   const kodiere = (punkte) => {
     let alt = [0, 0], text = '';

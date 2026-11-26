@@ -390,13 +390,24 @@ const MARKEN = [
   { name: "Electra", muster: /electra\b/i },
   { name: "Power Dot", muster: /power ?dot/i },
   { name: "IZIVIA", muster: /izivia/i },
+  { name: "IECharge", muster: /iecharge/i },
+  { name: "ENGIE Vianeo", muster: /vianeo/i },
 ];
 
-// true, wenn alle Betreiber der Station zu gemiedenen Marken gehören
+// Marke zu einem Betreibernamen, sonst der Name selbst (für "Nicht mehr bei … laden" an einem Stopp)
+function markeVon(name) {
+  const m = MARKEN.find((x) => x.muster.test(name));
+  return m ? m.name : name;
+}
+
+// true, wenn alle Betreiber der Station gemieden werden: als Marke (alle Schreibweisen)
+// oder als einzeln gemiedener Betreibername (genau dieser Name)
 function meidet(namen, meiden) {
   if (!meiden?.size || !namen.length) return false;
   const muster = MARKEN.filter((m) => meiden.has(m.name)).map((m) => m.muster);
-  return muster.length > 0 && namen.every((n) => muster.some((r) => r.test(n)));
+  const einzeln = new Set([...meiden].filter((n) => !MARKEN.some((m) => m.name === n)).map((n) => n.toLowerCase()));
+  if (!muster.length && !einzeln.size) return false;
+  return namen.every((n) => einzeln.has(n.toLowerCase()) || muster.some((r) => r.test(n)));
 }
 
 // Valhalla liefert die Strecke als Polyline mit 6 Nachkommastellen; Ergebnis [[lon, lat], ...]
@@ -422,7 +433,7 @@ function polyline6(text) {
 if (typeof module !== "undefined") {
   module.exports = {
     PLAN, zerlege, entlangDerRoute, deckung, planen, bewerten, ladeStopp, ladeMinuten, alleVarianten,
-    entfernungKm: planerEntfernungKm, groessteLuecke, fahrzeitProfil, zeitplan, kartenVergleich, MARKEN, meidet, polyline6,
+    entfernungKm: planerEntfernungKm, groessteLuecke, fahrzeitProfil, zeitplan, kartenVergleich, MARKEN, meidet, markeVon, polyline6,
   };
 }
 
@@ -474,6 +485,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
   if (!Array.isArray(auto.meiden)) auto.meiden = [];
   const speichern = () => { try { localStorage.setItem(PLANER_SPEICHER, JSON.stringify(auto)); } catch {} };
   const gemieden = () => new Set(auto.meiden);
+  const netzName = (n) => n.replace(/\s*\|.*$/, "");
   const meineKarten = () => (typeof karten !== "undefined" ? karten : new Set());
   const tarifListe = () => (typeof alleTarife === "function" ? alleTarife() : []);
 
@@ -527,9 +539,10 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
   // "Nicht laden bei": Marken über alle Betreibernamen hinweg
   function rendereMeiden() {
     const m = gemieden();
-    $("planer-meiden").innerHTML = MARKEN.map((x) =>
-      `<button type="button" aria-pressed="${m.has(x.name)}" data-meide="${esc(x.name)}">${esc(x.name)}</button>`).join("");
-    $("planer-meiden-anzahl").textContent = m.size ? `: ${[...m].join(", ")}` : "";
+    const eigene = [...m].filter((n) => !MARKEN.some((x) => x.name === n));
+    $("planer-meiden").innerHTML = [...MARKEN.map((x) => x.name), ...eigene].map((n) =>
+      `<button type="button" aria-pressed="${m.has(n)}" data-meide="${esc(n)}">${esc(netzName(n))}</button>`).join("");
+    $("planer-meiden-anzahl").textContent = m.size ? `: ${[...m].map(netzName).join(", ")}` : "";
   }
   rendereMeiden();
   $("planer-meiden").addEventListener("click", (ev) => {
@@ -731,6 +744,15 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     zeigeErgebnis(R);
   }
 
+  // Knopf am Stopp: dieses Netz künftig meiden und neu planen
+  function meidenKnopf(k) {
+    const namen = k.namen.filter((n) => n !== "Betreiber unbekannt");
+    if (!namen.length) return "";
+    const marken = [...new Set(namen.map(markeVon))].map(netzName);
+    return `<button type="button" class="textknopf" data-meide-stopp="${encodeURIComponent(JSON.stringify(namen))}"
+      title="Wird unter „Nicht laden bei“ gespeichert und lässt sich dort wieder einschalten">Nicht mehr bei ${esc(marken.join(" / "))} laden</button>`;
+  }
+
   const ortVon = (k) => (k.zeile[7] >= 0 ? deDaten.orte[k.zeile[7]] : "Ladestopp");
   const preisKurz = (k) => (k.ct != null ? LT.label(k.preis) : `≈${PLAN.ersatzPreisCt} ct/kWh geschätzt`);
 
@@ -897,7 +919,7 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
         <span class="leise">${zahlText(k.kw)} kW${k.abstand >= 0.5 ? ` · ${zahlText(k.abstand, 1)} km neben der Route` : ""}${k.zeile[8] === "FR" ? " · Frankreich" : ""}</span><br>
         an ${uhrzeit(R, halt.an)} mit ${zahlText(s.von)} % · <b>${zeitText(s.ladenMin)}</b> laden bis ${zahlText(s.bis)} % · weiter ${uhrzeit(R, halt.ab)}<br>
         <strong>ca. ${zahlText(s.euro, 2)} €</strong> <span class="leise">· ${preisKurz(k)}${k.preis?.name && k.ct != null ? ` (${esc(k.preis.name)})` : ""}</span>${besserMit(k)}${warn}
-        ${kartenHtml(k)}${preisDetails(k)}`;
+        ${kartenHtml(k)}${preisDetails(k)}${meidenKnopf(k)}`;
       if (bearbeiten) {
         liste += `<div class="knoepfe"><button type="button" class="textknopf" data-ersetzen="${n}">Ersetzen</button>
           <button type="button" class="textknopf" data-entfernen="${n}">Entfernen</button></div>`;
@@ -1080,6 +1102,16 @@ if (typeof document !== "undefined" && typeof karte !== "undefined") {
     } else if (d.entlangMehr) {
       entlangMax += 40;
       fuelleEntlang();
+    } else if (d.meideStopp) {
+      let namen = [];
+      try { namen = JSON.parse(decodeURIComponent(d.meideStopp)); } catch {}
+      const neu = [...new Set(namen.filter((n) => n && n !== "Betreiber unbekannt").map(markeVon))];
+      if (!neu.length) return;
+      auto.meiden = [...new Set([...auto.meiden, ...neu])];
+      speichern();
+      rendereMeiden();
+      edit = null;
+      neuRechnen();
     } else if (!edit) {
       return;
     } else if (d.entfernen !== undefined) {
